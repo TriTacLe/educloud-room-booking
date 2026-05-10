@@ -275,8 +275,14 @@ class TPClient:
                 if criteria.building_label.lower() not in building_name:
                     continue
 
+            if criteria.excluded_buildings:
+                building_name = (item.get("building_name") or "").lower()
+                if any(ex.lower() in building_name for ex in criteria.excluded_buildings):
+                    continue
+
             size = int(item.get("size") or 0)
-            if size < criteria.min_capacity:
+            # size=0 means TP doesn't report capacity for this room; include it anyway
+            if size > 0 and size < criteria.min_capacity:
                 continue
 
             roomtype_obj = item.get("roomtype") or {}
@@ -307,6 +313,24 @@ class TPClient:
                     room_type=room_type_name,
                 ))
 
+        # When preferred rooms are set, log their status in the raw API response
+        if criteria.preferred_rooms and rooms_data:
+            area_lower = (criteria.area_label or "").lower()
+            for item in rooms_data:
+                item_name = str(item.get("name") or item.get("acronym") or "")
+                item_id = str(item.get("id") or "")
+                for pref in criteria.preferred_rooms:
+                    if pref.lower() in item_name.lower() or pref.lower() in item_id.lower():
+                        in_area = area_lower in (item.get("area_name") or "").lower()
+                        logger.info(
+                            "Preferred '%s': found as '%s' (id=%s) area='%s' available=%s can_book=%s cap=%s",
+                            pref, item_name, item_id,
+                            item.get("area_name", ""),
+                            item.get("available"), item.get("can_book"), item.get("size"),
+                        )
+                        if not in_area:
+                            logger.info("  ^ filtered out: not in area '%s'", criteria.area_label)
+
         if not rooms:
             available_count = sum(
                 1 for r in rooms_data if r.get("available") and r.get("can_book")
@@ -328,24 +352,49 @@ class TPClient:
         if not rooms:
             return None
 
-        # Preferred room names first
-        for pref in criteria.preferred_rooms:
-            for room in rooms:
-                if pref.lower() in room.id.lower() or pref.lower() in room.name.lower():
-                    return room
+        # Filter excluded rooms
+        rooms = [
+            r for r in rooms
+            if not any(ex.lower() in r.name.lower() or ex.lower() in r.id.lower() for ex in criteria.excluded_rooms)
+        ]
+        if not rooms:
+            logger.debug("All rooms filtered by excluded_rooms=%s", criteria.excluded_rooms)
+            return None
+
+        # Preferred room names first (skip when shuffling)
+        if not criteria.shuffle_rooms:
+            for pref in criteria.preferred_rooms:
+                for room in rooms:
+                    if pref.lower() in room.id.lower() or pref.lower() in room.name.lower():
+                        return room
+            if criteria.preferred_rooms:
+                logger.info(
+                    "Preferred rooms %s not found among %d available: %s",
+                    criteria.preferred_rooms, len(rooms), [r.name for r in rooms[:10]],
+                )
 
         eligible = [r for r in rooms if r.capacity >= criteria.min_capacity]
         if not eligible:
             eligible = rooms
 
-        # Sort: preferred room types first, then ascending capacity
-        def sort_key(r: Room) -> tuple[int, int]:
+        if criteria.shuffle_rooms:
+            import random
+            random.shuffle(eligible)
+            return eligible[0]
+
+        # Sort: preferred buildings first, then preferred room types, then ascending capacity
+        def sort_key(r: Room) -> tuple[int, int, int]:
+            bld_rank = len(criteria.preferred_buildings)
+            for i, pb in enumerate(criteria.preferred_buildings):
+                if pb.lower() in r.building.lower():
+                    bld_rank = i
+                    break
             type_rank = len(criteria.preferred_room_types)
             for i, pt in enumerate(criteria.preferred_room_types):
                 if pt.lower() in r.room_type.lower():
                     type_rank = i
                     break
-            return (type_rank, r.capacity)
+            return (bld_rank, type_rank, r.capacity)
 
         eligible.sort(key=sort_key)
         return eligible[0]

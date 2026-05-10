@@ -1,0 +1,12 @@
+[Unit]
+Description=NTNU room booking (koker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/tri/Desktop/personal/ntnu-room-booking
+EnvironmentFile=/home/tri/Desktop/personal/ntnu-room-booking/.env
+ExecStart=/home/tri/Desktop/personal/ntnu-room-booking/.venv/bin/koker book --config config-daily.yaml
+StandardOutput=append:/home/tri/Desktop/personal/ntnu-room-booking/data/koker-cron.log
+StandardError=append:/home/tri/Desktop/personal/ntnu-room-booking/data/koker-cron.log

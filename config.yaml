@@ -1,0 +1,154 @@
+# --- Profiles ---
+# Pick one profile in booking with <<: *name. Explicit keys below override the profile.
+
+_profiles:
+
+  # No restrictions - book any room, any type, cap 1+
+  book_all: &book_all
+    min_capacity: 1
+    building: null
+    room_type: null
+    preferred_rooms:
+      - "G138"
+    preferred_room_types: []
+    excluded_rooms: []
+    shuffle_rooms: false
+    equipment:
+      whiteboard: false
+      projector: false
+    no_overlap: false
+
+  # Cap 6+, no equipment required
+  cap6: &cap6
+    min_capacity: 6
+    building: null
+    room_type: null
+    preferred_rooms:
+      - "G138"
+    preferred_room_types:
+      - "Study hall"
+      - "Group room"
+    excluded_rooms: []
+    shuffle_rooms: false
+    equipment:
+      whiteboard: false
+      projector: false
+    no_overlap: true
+
+  # Cap 6+, whiteboard required
+  cap6_whiteboard: &cap6_whiteboard
+    min_capacity: 6
+    building: null
+    room_type: null
+    preferred_rooms: []
+    preferred_room_types: []
+    excluded_rooms: []
+    shuffle_rooms: false
+    equipment:
+      whiteboard: true
+      projector: false
+    no_overlap: true
+
+  # Cap 6+, projector required
+  cap6_projector: &cap6_projector
+    min_capacity: 6
+    building: null
+    room_type: null
+    preferred_rooms: []
+    preferred_room_types: []
+    excluded_rooms: []
+    shuffle_rooms: false
+    equipment:
+      whiteboard: false
+      projector: true
+    no_overlap: true
+
+  # Fill quota: any room, no overlap restriction, prefer G138
+  max_quota: &max_quota
+    min_capacity: 1
+    building: null
+    room_type: null
+    preferred_rooms:
+      - "G138"
+    preferred_room_types: []
+    excluded_rooms: []
+    shuffle_rooms: false
+    equipment:
+      whiteboard: false
+      projector: false
+    no_overlap: false
+
+  # Default: cap 6+, Gløshaugen, shuffle for variety
+  default: &default
+    min_capacity: 6
+    building: null
+    room_type: null
+    preferred_rooms: []
+    preferred_room_types: []
+    preferred_buildings:
+      - "Realfagbygget"
+      - "Elektro"
+    excluded_rooms: []
+    excluded_buildings:
+      - "Adolf Øien"
+      - "BIM"
+      - "Byggteknisk"
+    shuffle_rooms: true
+    equipment:
+      whiteboard: false
+      projector: false
+    no_overlap: true
+
+  # Test room variety: shuffle selection so different rooms get booked across days
+  test_diverse: &test_diverse
+    min_capacity: 1
+    building: null
+    room_type: null
+    preferred_rooms: []
+    preferred_room_types: []
+    excluded_rooms: []   # add names to skip, e.g. ["3064", "E204"]
+    shuffle_rooms: true
+    equipment:
+      whiteboard: false
+      projector: false
+    no_overlap: false
+
+# ---
+
+account:
+  feide_user: ""
+
+booking:
+  <<: *default  # change to: *book_all, *cap6, *cap6_whiteboard, *cap6_projector, *max_quota, *test_diverse, *default
+
+  # campus: Gløshaugen, Kalvskinnet, Ålesund, Gjøvik
+  campus: Gløshaugen
+
+  duration: "04:00" # max 04:00
+  description: "Group work"
+  notes: ""
+  count: 100  # large number - stops at quota
+  start: "09:00"
+
+  # end: latest time a booking can end. Search tries start, start+step, ... up to end - duration.
+  end: "18:00"
+  time_step_minutes: 15
+
+  # 20 days so 2 non-overlapping slots/day can reach quota=36 (18 days min)
+  days_ahead: 20
+
+  # Static dates - uncomment and remove days_ahead to book specific dates instead:
+  # dates:
+  #   - 2026-05-11
+  #   - 2026-05-12
+
+  # schedule: per-slot control. count = different rooms to book at the same time.
+  # schedule:
+  #   - date: 2026-05-11
+  #     start: "09:00"
+  #     count: 2
+
+notifications:
+  # Credentials from env: GMAIL_TO, GMAIL_APP_PASSWORD, GMAIL_FROM
+  # App password: myaccount.google.com -> Security -> App passwords
+  gmail: {}

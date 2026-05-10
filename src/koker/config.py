@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date as _date
+import os
+from datetime import date as _date, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +33,7 @@ class SlotSpec(BaseModel):
 class BookingSpec(BaseModel):
     date: Optional[_date] = None
     dates: list[_date] = []
+    days_ahead: Optional[int] = None  # book today + next N-1 days (dynamic, good for timers)
     schedule: list[SlotSpec] = []
     start: str = "09:00"
     duration: str  # HH:MM, max 04:00
@@ -45,14 +47,18 @@ class BookingSpec(BaseModel):
     equipment: Equipment = Equipment()
     preferred_rooms: list[str] = []
     preferred_room_types: list[str] = []
-    search_cutoff_start: str = "16:00"
-    search_cutoff_end: str = "18:00"
+    preferred_buildings: list[str] = []
+    excluded_rooms: list[str] = []
+    excluded_buildings: list[str] = []
+    shuffle_rooms: bool = False
+    end: str = "18:00"  # latest time a booking can end; search stops at end - duration
     time_step_minutes: int = 15
     max_days_ahead: int = 14
+    no_overlap: bool = False
 
-    @field_validator("search_cutoff_start", "search_cutoff_end")
+    @field_validator("end")
     @classmethod
-    def check_cutoff_format(cls, v: str) -> str:
+    def check_end_format(cls, v: str) -> str:
         parts = v.split(":")
         if len(parts) != 2 or not all(p.isdigit() for p in parts):
             raise ValueError(f"time must be HH:MM, got '{v}'")
@@ -60,23 +66,28 @@ class BookingSpec(BaseModel):
 
     @model_validator(mode="after")
     def check_dates(self) -> "BookingSpec":
-        if not self.date and not self.dates and not self.schedule:
-            raise ValueError("specify 'date', 'dates', or 'schedule'")
+        if not self.date and not self.dates and not self.schedule and self.days_ahead is None:
+            raise ValueError("specify 'date', 'dates', 'days_ahead', or 'schedule'")
         return self
+
+    def _resolved_dates(self) -> list[_date]:
+        if self.days_ahead is not None:
+            today = _date.today()
+            return [today + timedelta(days=i) for i in range(self.days_ahead)]
+        if self.dates:
+            return self.dates
+        return [self.date]  # type: ignore[list-item]
 
     def all_slots(self) -> list[tuple[_date, str, int]]:
         """Return list of (date, start_hhmm, count) tuples."""
         if self.schedule:
             return [(s.date, s.start, s.count) for s in self.schedule]
-        dates = self.dates if self.dates else [self.date]  # type: ignore[list-item]
-        return [(d, self.start, self.count) for d in dates]
+        return [(d, self.start, self.count) for d in self._resolved_dates()]
 
     def all_dates(self) -> list[_date]:
-        if self.dates:
-            return self.dates
         if self.schedule:
             return [s.date for s in self.schedule]
-        return [self.date]  # type: ignore[list-item]
+        return self._resolved_dates()
 
     @field_validator("start")
     @classmethod
@@ -108,9 +119,26 @@ class Account(BaseModel):
     feide_user: str = ""
 
 
+class GmailConfig(BaseModel):
+    to: str = ""
+    from_addr: str = ""
+    app_password: str = ""
+
+    def resolve(self) -> tuple[str, str, str]:
+        to = self.to or os.getenv("GMAIL_TO", "")
+        from_addr = self.from_addr or os.getenv("GMAIL_FROM", to)
+        app_password = self.app_password or os.getenv("GMAIL_APP_PASSWORD", "")
+        return to, from_addr, app_password
+
+
+class NotificationsConfig(BaseModel):
+    gmail: Optional[GmailConfig] = None
+
+
 class Config(BaseModel):
     account: Account = Account()
     booking: BookingSpec
+    notifications: NotificationsConfig = NotificationsConfig()
 
 
 def load_config(path: Path) -> Config:

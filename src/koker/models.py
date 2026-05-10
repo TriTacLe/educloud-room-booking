@@ -42,5 +42,9 @@ class SearchCriteria:
     min_capacity: int = 1
     preferred_rooms: list[str] = field(default_factory=list)
     preferred_room_types: list[str] = field(default_factory=list)
+    preferred_buildings: list[str] = field(default_factory=list)
+    excluded_rooms: list[str] = field(default_factory=list)
+    excluded_buildings: list[str] = field(default_factory=list)
+    shuffle_rooms: bool = False
     description: str = "Group work"
     notes: str = ""

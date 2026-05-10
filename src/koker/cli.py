@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import sys
 from collections import defaultdict
 from datetime import date as _date
@@ -10,6 +11,9 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent.parent / ".env", override=False)
 from playwright.sync_api import sync_playwright
 
 from koker.auth import get_authenticated_context, refresh_session
@@ -38,12 +42,16 @@ def _advance_time(t: dtime, step_minutes: int) -> dtime:
     return dt.time()
 
 
-def _latest_valid_start(duration_minutes: int, cutoff_start: dtime, cutoff_end: dtime) -> dtime:
-    """Return the latest start time such that booking ends by cutoff_end and starts before cutoff_start."""
+def _time_overlaps(start: dtime, duration_minutes: int, booked: list[tuple[dtime, dtime]]) -> bool:
+    end = (datetime.combine(_date.today(), start) + timedelta(minutes=duration_minutes)).time()
+    return any(start < b_end and b_start < end for b_start, b_end in booked)
+
+
+def _latest_valid_start(duration_minutes: int, end: dtime) -> dtime:
+    """Return the latest start time such that booking ends by `end`."""
     dur_td = timedelta(minutes=duration_minutes)
-    end_dt = datetime.combine(_date.today(), cutoff_end)
-    latest_by_end = (end_dt - dur_td).time()
-    return min(latest_by_end, cutoff_start)
+    end_dt = datetime.combine(_date.today(), end)
+    return (end_dt - dur_td).time()
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -118,7 +126,7 @@ def status(
             if not bookings:
                 print("No active bookings found.")
             else:
-                print(f"\nActive bookings ({len(bookings)}/8 quota used):")
+                print(f"\nActive bookings ({len(bookings)} total):")
                 print(f"{'#':<4} {'Room':<30} {'Date':<14} {'Time':<10} {'ID'}")
                 print("-" * 70)
                 for i, b in enumerate(bookings, 1):
@@ -224,22 +232,26 @@ def book(
     try:
         duration_td = validate_duration(spec.duration)
         validate_time_window(spec.start, duration_td)
-        for slot_date, slot_start, _ in spec.all_slots():
-            validate_lookahead(slot_date, slot_start)
     except RuleViolation as e:
         print(f"Rule violation: {e}", file=sys.stderr)
         raise typer.Exit(1)
 
     duration_minutes = int(duration_td.total_seconds() // 60)
 
-    slots = spec.all_slots()
+    skipped: set[tuple] = set()
+    for slot_date, slot_start, _ in spec.all_slots():
+        try:
+            validate_lookahead(slot_date, slot_start)
+        except RuleViolation as e:
+            print(f"Skipping slot {slot_date} {slot_start}: {e}", file=sys.stderr)
+            skipped.add((slot_date, slot_start))
+
+    slots = [(d, s, c) for d, s, c in spec.all_slots() if (d, s) not in skipped]
     total_bookings = sum(count for _, _, count in slots)
 
-    cutoff_start_h, cutoff_start_m = (int(x) for x in spec.search_cutoff_start.split(":"))
-    cutoff_end_h, cutoff_end_m = (int(x) for x in spec.search_cutoff_end.split(":"))
-    cutoff_start = dtime(cutoff_start_h, cutoff_start_m)
-    cutoff_end = dtime(cutoff_end_h, cutoff_end_m)
-    latest_start = _latest_valid_start(duration_minutes, cutoff_start, cutoff_end)
+    end_h, end_m = (int(x) for x in spec.end.split(":"))
+    end_time = dtime(end_h, end_m)
+    latest_start = _latest_valid_start(duration_minutes, end_time)
 
     with sync_playwright() as p:
         browser, ctx, page = None, None, None
@@ -249,30 +261,57 @@ def book(
             browser, ctx, page = _open_browser(p)
             client = TPClient(page)
 
-            print(f"\nBooking {total_bookings} room(s) across {len(slots)} slot(s) at {spec.campus}")
+            print(f"\nBooking up to {total_bookings} room(s) across {len(slots)} slot(s) at {spec.campus} (round-robin)")
 
             any_success = False
             booking_num = 0
             failed = False
             booked_per_slot: dict[tuple[_date, str], set[str]] = defaultdict(set)
+            booked_times: dict[_date, list[tuple[dtime, dtime]]] = defaultdict(list)
 
+            # Pre-compute slot metadata; round-robin distributes 1 booking per slot per round
+            # so count:100 fills quota evenly across all days instead of front-loading day 1.
+            # days_ahead mode: no date overflow per slot - all days already in queue
+            overflow_days = 0 if spec.days_ahead is not None else spec.max_days_ahead
+            slot_meta: list[tuple[_date, dtime, int, _date]] = []
             for slot_date, slot_start, slot_count in slots:
-                if failed:
-                    break
-
                 start_h, start_m = (int(x) for x in slot_start.split(":"))
                 slot_start_time = dtime(start_h, start_m)
-                max_search_date = slot_date + timedelta(days=spec.max_days_ahead)
+                max_search_date = slot_date + timedelta(days=overflow_days)
+                slot_meta.append((slot_date, slot_start_time, slot_count, max_search_date))
 
-                for i in range(slot_count):
+            max_count = max((s[2] for s in slot_meta), default=0)
+
+            for round_num in range(max_count):
+                if failed:
+                    break
+                for slot_date, slot_start_time, slot_count, max_search_date in slot_meta:
+                    if failed:
+                        break
+                    if round_num >= slot_count:
+                        continue
+
                     booking_num += 1
                     booking_found = False
                     search_date = slot_date
 
                     while search_date <= max_search_date and not booking_found:
-                        search_start = slot_start_time
+                        if spec.shuffle_rooms:
+                            # Vary start time per date so different hours get sampled,
+                            # exposing rooms that are only free in the afternoon.
+                            start_dt = datetime.combine(_date.today(), slot_start_time)
+                            end_dt = datetime.combine(_date.today(), latest_start)
+                            total_steps = max(0, int((end_dt - start_dt).total_seconds() / 60) // spec.time_step_minutes)
+                            offset = random.randint(0, total_steps) * spec.time_step_minutes
+                            search_start = _advance_time(slot_start_time, offset)
+                        else:
+                            search_start = slot_start_time
 
                         while search_start <= latest_start and not booking_found:
+                            if spec.no_overlap and _time_overlaps(search_start, duration_minutes, booked_times[search_date]):
+                                search_start = _advance_time(search_start, spec.time_step_minutes)
+                                continue
+
                             slot_key = (search_date, search_start.strftime("%H:%M"))
                             already_booked = booked_per_slot[slot_key]
 
@@ -286,6 +325,10 @@ def book(
                                 min_capacity=spec.min_capacity,
                                 preferred_rooms=spec.preferred_rooms,
                                 preferred_room_types=spec.preferred_room_types,
+                                preferred_buildings=spec.preferred_buildings,
+                                excluded_rooms=spec.excluded_rooms,
+                                excluded_buildings=spec.excluded_buildings,
+                                shuffle_rooms=spec.shuffle_rooms,
                                 description=spec.description,
                                 notes=spec.notes,
                             )
@@ -307,36 +350,48 @@ def book(
                                 continue
 
                             type_tag = f" [{room.room_type}]" if room.room_type else ""
-                            print(f"[{booking_num}/{total_bookings}] Selected: {room.name}{type_tag} (cap {room.capacity}) on {search_date} at {search_start.strftime('%H:%M')}")
+                            print(f"[{booking_num}] Selected: {room.name}{type_tag} (cap {room.capacity}) on {search_date} at {search_start.strftime('%H:%M')}")
 
                             try:
                                 result = client.confirm(room, criteria)
                             except QuotaExceededError:
-                                print(f"[{booking_num}/{total_bookings}] Quota exceeded.", file=sys.stderr)
+                                print(f"[{booking_num}] Quota exceeded.", file=sys.stderr)
                                 failed = True
                                 break
 
                             if result.success:
-                                print(f"[{booking_num}/{total_bookings}] Booked: {result.room.name} on {result.date} at {result.start}")
+                                end_mins = result.start.hour * 60 + result.start.minute + result.duration_minutes
+                                end_h2, end_m2 = divmod(end_mins, 60)
+                                time_range = f"{result.start.strftime('%H:%M')}-{end_h2:02d}:{end_m2:02d}"
+                                print(f"[{booking_num}] Booked: {result.room.name} on {result.date} {time_range}")
                                 booked_per_slot[slot_key].add(room.name)
+                                booking_end = (datetime.combine(_date.today(), search_start) + timedelta(minutes=duration_minutes)).time()
+                                booked_times[search_date].append((search_start, booking_end))
                                 if result.booking_id:
                                     booked_ids.append(result.booking_id)
                                 any_success = True
                                 booking_found = True
+                                if cfg.notifications.gmail:
+                                    try:
+                                        from koker.notifier import send_gmail
+                                        to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                                        if to and app_password:
+                                            send_gmail(result, to, app_password, from_addr)
+                                        else:
+                                            print(f"[{booking_num}] Warning: Gmail skipped - GMAIL_TO or GMAIL_APP_PASSWORD not set", file=sys.stderr)
+                                    except Exception as notify_err:
+                                        print(f"[{booking_num}] Warning: Gmail notification failed: {notify_err}", file=sys.stderr)
                             else:
-                                print(f"[{booking_num}/{total_bookings}] Warning: {result.message}")
+                                print(f"[{booking_num}] Warning: {result.message}")
                                 search_start = _advance_time(search_start, spec.time_step_minutes)
 
                         if not booking_found and not failed:
                             search_date += timedelta(days=1)
                             if search_date <= max_search_date:
-                                print(f"[{booking_num}/{total_bookings}] No room on {search_date - timedelta(days=1)}, trying {search_date}...")
+                                print(f"[{booking_num}] No room on {search_date - timedelta(days=1)}, trying {search_date}...")
 
                     if not booking_found and not failed:
-                        print(f"[{booking_num}/{total_bookings}] No room found within search window.", file=sys.stderr)
-
-                    if failed:
-                        break
+                        print(f"[{booking_num}] No room found within search window.", file=sys.stderr)
 
             client.flush_xhr_log(DEBUG_DIR)
             if any_success:
@@ -347,12 +402,26 @@ def book(
                 _save_debug(page, "session-expired")
             msg = "Session expired. Delete data/storage_state.json and run `koker login` again."
             print(msg, file=sys.stderr)
+            if cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject="koker: session expired - action required",
+                            body="NTNU room booking session expired.\n\nRun `koker login` to re-authenticate, then the timer will resume booking automatically.",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
             raise typer.Exit(1)
 
         except QuotaExceededError:
             if page:
                 _save_debug(page, "quota-exceeded")
-            print("NTNU quota reached (max 8 bookings per 2-week period).", file=sys.stderr)
+            print("NTNU quota reached.", file=sys.stderr)
             raise typer.Exit(1)
 
         except NoRoomsAvailableError as e:
@@ -389,6 +458,86 @@ def book(
                     ctx.close()
                 except Exception:
                     pass
+            if browser:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+
+
+@app.command()
+def rooms(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config.yaml"),
+    date_str: Optional[str] = typer.Option(None, "--date", "-d", help="Date to search (YYYY-MM-DD). Defaults to tomorrow."),
+    start: Optional[str] = typer.Option(None, "--start", "-s", help="Start time HH:MM. Defaults to config start."),
+) -> None:
+    """List available rooms matching the config criteria for a given date."""
+    if not config.exists():
+        print(f"Config not found: {config}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    try:
+        cfg = load_config(config)
+    except Exception as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    spec = cfg.booking
+
+    if date_str:
+        search_date = _date.fromisoformat(date_str)
+    else:
+        search_date = _date.today() + timedelta(days=1)
+
+    start_str = start or spec.start
+    start_h, start_m = (int(x) for x in start_str.split(":"))
+    search_start = dtime(start_h, start_m)
+
+    duration_td = validate_duration(spec.duration)
+    duration_minutes = int(duration_td.total_seconds() // 60)
+
+    criteria = SearchCriteria(
+        date=search_date,
+        start=search_start,
+        duration_minutes=duration_minutes,
+        area_label=spec.campus,
+        building_label=spec.building or "",
+        room_type_label=spec.room_type or "",
+        min_capacity=spec.min_capacity,
+        preferred_rooms=spec.preferred_rooms,
+        preferred_room_types=spec.preferred_room_types,
+        preferred_buildings=spec.preferred_buildings,
+        excluded_rooms=spec.excluded_rooms,
+        excluded_buildings=spec.excluded_buildings,
+        shuffle_rooms=False,
+        description=spec.description,
+        notes=spec.notes,
+    )
+
+    with sync_playwright() as p:
+        browser, ctx, page = None, None, None
+        try:
+            browser, ctx, page = _open_browser(p)
+            client = TPClient(page)
+            all_rooms = client.search(criteria)
+
+            print(f"\nAvailable rooms on {search_date} at {search_start.strftime('%H:%M')} ({duration_minutes // 60}h) - {spec.campus}, cap {spec.min_capacity}+")
+            print(f"{'#':<4} {'Room':<12} {'Type':<20} {'Cap':<6} {'Building'}")
+            print("-" * 70)
+            for i, r in enumerate(all_rooms, 1):
+                print(f"{i:<4} {r.name:<12} {r.room_type:<20} {r.capacity:<6} {r.building}")
+            print(f"\n{len(all_rooms)} room(s) available.")
+
+        except NoRoomsAvailableError:
+            print(f"No rooms available on {search_date} at {search_start.strftime('%H:%M')}.")
+        except SessionExpiredError:
+            print("Session expired. Run `koker login` again.", file=sys.stderr)
+            raise typer.Exit(1)
+        except Exception as e:
+            logging.exception("Unexpected error")
+            print(f"Error: {e}", file=sys.stderr)
+            raise typer.Exit(1)
+        finally:
             if browser:
                 try:
                     browser.close()

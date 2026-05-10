@@ -19,11 +19,15 @@ data/debug/
 data/room_cache.json
 data/jobs.sqlite
 
-# user config (keep the example, not the real one)
-config.yaml
+# user config
+config-daily.yaml
 
 # playwright MCP session artifacts
 .playwright-mcp/
 
 # personal dev notes
-DEV_NOTES.md
+# DEV_NOTES.md
+.claude
+
+# local env vars (credentials)
+.env
