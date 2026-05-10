@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# mypy/ruff caches
+.mypy_cache/
+.ruff_cache/
+
+# session and runtime data - never commit these
+data/storage_state.json
+data/debug/
+data/room_cache.json
+data/jobs.sqlite
+
+# user config (keep the example, not the real one)
+config.yaml
+
+# playwright MCP session artifacts
+.playwright-mcp/
+
+# personal dev notes
+DEV_NOTES.md
