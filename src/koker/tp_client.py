@@ -7,7 +7,7 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page
 
-from ntnu_rombot.models import BookingResult, MyBooking, Room, SearchCriteria
+from koker.models import BookingResult, MyBooking, Room, SearchCriteria
 
 logger = logging.getLogger(__name__)
 

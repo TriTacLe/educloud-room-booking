@@ -12,16 +12,16 @@ from typing import Optional
 import typer
 from playwright.sync_api import sync_playwright
 
-from ntnu_rombot.auth import get_authenticated_context, refresh_session
-from ntnu_rombot.config import load_config
-from ntnu_rombot.models import SearchCriteria
-from ntnu_rombot.rules import (
+from koker.auth import get_authenticated_context, refresh_session
+from koker.config import load_config
+from koker.models import SearchCriteria
+from koker.rules import (
     RuleViolation,
     validate_duration,
     validate_lookahead,
     validate_time_window,
 )
-from ntnu_rombot.tp_client import (
+from koker.tp_client import (
     BookingError,
     NoRoomsAvailableError,
     QuotaExceededError,

@@ -7,7 +7,7 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
-from ntnu_rombot.rules import RuleViolation, validate_duration, validate_time_window
+from koker.rules import RuleViolation, validate_duration, validate_time_window
 
 
 class Equipment(BaseModel):

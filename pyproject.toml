@@ -4,22 +4,18 @@ version = "0.1.0"
 description = "Automate NTNU TP room booking via Playwright"
 requires-python = ">=3.12"
 dependencies = [
-    "playwright>=1.59.0",
-    "pydantic>=2.13.4",
-    "python-dateutil>=2.9.0.post0",
-    "pyyaml>=6.0.3",
-    "typer>=0.25.1",
+  "playwright>=1.59.0",
+  "pydantic>=2.13.4",
+  "python-dateutil>=2.9.0.post0",
+  "pyyaml>=6.0.3",
+  "typer>=0.25.1",
 ]
 
 [dependency-groups]
-dev = [
-    "mypy>=2.0.0",
-    "ruff>=0.15.12",
-    "types-pyyaml>=6.0.12.20260508",
-]
+dev = ["mypy>=2.0.0", "ruff>=0.15.12", "types-pyyaml>=6.0.12.20260508"]
 
 [project.scripts]
-koker = "ntnu_rombot.cli:app"
+koker = "koker.cli:app"
 
 [tool.ruff]
 src = ["src"]
@@ -29,9 +25,9 @@ line-length = 100
 select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/ntnu_rombot/tp_client.py" = ["E501"]
-"src/ntnu_rombot/cli.py" = ["E501"]
-"src/ntnu_rombot/rules.py" = ["E501"]
+"src/koker/tp_client.py" = ["E501"]
+"src/koker/cli.py" = ["E501"]
+"src/koker/rules.py" = ["E501"]
 
 [tool.mypy]
 strict = true
@@ -42,4 +38,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ntnu_rombot"]
+packages = ["src/koker"]
