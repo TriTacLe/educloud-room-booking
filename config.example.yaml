@@ -1,0 +1,52 @@
+account:
+  feide_user: brukernavn@ntnu.no
+
+booking:
+  date: 2026-05-21
+  start: "09:00"
+  duration: "04:00"  # max 04:00
+  description: "Group work"
+  notes: ""  # optional, shown in TP booking details
+
+  campus: Gløshaugen
+  building: null  # e.g. "Realfagbygget", "IT-bygget". null = all buildings
+  room_type: null  # see preferred_room_types below for common values
+  min_capacity: 4
+  count: 1  # bookings per date/slot (use schedule for per-slot control)
+
+  equipment:
+    whiteboard: false
+    projector: false
+
+  # Room names or partial matches tried first before generic search order.
+  preferred_rooms: []
+  # preferred_rooms:
+  #   - "R8"
+  #   - "A260"
+
+  # Room types tried in order. First match wins. Leave empty to accept any type.
+  preferred_room_types: []
+  # preferred_room_types:
+  #   - "Study hall"
+  #   - "Group room"
+  #   - "Meeting room"
+  #   - "Computer room"
+  #   - "Auditorium"
+
+  # Dynamic search: if no room at configured start time, step forward in
+  # time_step_minutes increments until search_cutoff_start (or until booking
+  # end would exceed search_cutoff_end). If still nothing, advance one calendar
+  # day and repeat, up to max_days_ahead days from the original slot date.
+  search_cutoff_start: "16:00"
+  search_cutoff_end: "18:00"
+  time_step_minutes: 15
+  max_days_ahead: 14
+
+  # Use 'schedule' instead of 'date'/'count' for per-slot control:
+  # schedule:
+  #   - date: 2026-05-21
+  #     start: "09:00"
+  #     count: 2
+  #   - date: 2026-05-22
+  #     start: "13:00"
+  #     count: 1
