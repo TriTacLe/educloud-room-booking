@@ -152,10 +152,18 @@ def status(
 def cancel(
     all: bool = typer.Option(False, "--all", help="Cancel all active bookings"),
     count: Optional[int] = typer.Option(None, "--count", "-n", help="Cancel N bookings"),
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config.yaml (for notifications)"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Show active bookings. Use --all or --count N to cancel."""
     _setup_logging(verbose)
+
+    cfg = None
+    if config.exists():
+        try:
+            cfg = load_config(config)
+        except Exception:
+            pass
 
     with sync_playwright() as p:
         browser, ctx, page = None, None, None
@@ -191,6 +199,24 @@ def cancel(
 
             print(f"Cancelled {n} booking(s).")
             refresh_session(ctx)
+
+            if cfg and cfg.notifications.gmail and n > 0:
+                try:
+                    from koker.notifier import send_alert
+                    to_addr, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to_addr and app_password:
+                        lines = [f"Cancelled {n} booking(s):", ""]
+                        for b in to_cancel:
+                            lines.append(f"  {b.room_name}  {b.date_str}  {b.time_str}  ({b.booking_id})")
+                        send_alert(
+                            subject=f"koker: cancelled {n} booking(s)",
+                            body="\n".join(lines),
+                            to=to_addr,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception as notify_err:
+                    print(f"Warning: Gmail notification failed: {notify_err}", file=sys.stderr)
 
         except SessionExpiredError:
             if page:
@@ -519,14 +545,28 @@ def rooms(
         try:
             browser, ctx, page = _open_browser(p)
             client = TPClient(page)
-            all_rooms = client.search(criteria)
+            available = client.search(criteria)
+            full = client.search_full(criteria)
 
-            print(f"\nAvailable rooms on {search_date} at {search_start.strftime('%H:%M')} ({duration_minutes // 60}h) - {spec.campus}, cap {spec.min_capacity}+")
-            print(f"{'#':<4} {'Room':<12} {'Type':<20} {'Cap':<6} {'Building'}")
-            print("-" * 70)
-            for i, r in enumerate(all_rooms, 1):
+            header = f"Rooms on {search_date} at {search_start.strftime('%H:%M')} ({duration_minutes // 60}h) - {spec.campus}, cap {spec.min_capacity}+"
+            col = f"{'#':<4} {'Room':<12} {'Type':<20} {'Cap':<6} {'Building'}"
+            sep = "-" * 70
+
+            print(f"\nAvailable ({len(available)}): {header}")
+            print(col)
+            print(sep)
+            for i, r in enumerate(available, 1):
                 print(f"{i:<4} {r.name:<12} {r.room_type:<20} {r.capacity:<6} {r.building}")
-            print(f"\n{len(all_rooms)} room(s) available.")
+            if not available:
+                print("  (none)")
+
+            print(f"\nFull / unbookable ({len(full)}):")
+            print(col)
+            print(sep)
+            for i, r in enumerate(full, 1):
+                print(f"{i:<4} {r.name:<12} {r.room_type:<20} {r.capacity:<6} {r.building}")
+            if not full:
+                print("  (none)")
 
         except NoRoomsAvailableError:
             print(f"No rooms available on {search_date} at {search_start.strftime('%H:%M')}.")

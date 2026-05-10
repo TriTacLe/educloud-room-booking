@@ -11,46 +11,43 @@ uv run playwright install chromium
 
 ## Setup
 
+Edit `config.yaml` with your NTNU username and preferences (see profiles section inside).
+
+Set Gmail credentials as env vars for notifications (optional):
+
 ```bash
-cp config.example.yaml config.yaml
-# edit config.yaml
+export GMAIL_TO=you@gmail.com
+export GMAIL_APP_PASSWORD=xxxx
 ```
 
 ## Commands
 
-### Login
-
 ```bash
-uv run koker login
-```
-
-Opens Chromium. Complete Feide + Microsoft Authenticator which user has to do manually. Session saved to `data/storage_state.json`. Re-run when session expires.
-
-### Book
-
-```bash
-uv run koker book --config config.yaml
-```
-
-Searches for available rooms matching your config, picks best fit, confirms booking. If no room at configured time, steps forward in 15-min increments up to `search_cutoff_end`, then tries the next day, up to `max_days_ahead`.
-
-### Status
-
-```bash
-uv run koker status          # list active bookings
-uv run koker status --verbose  # with debug output
-```
-
-### Cancel
-
-```bash
+uv run koker login                        # authenticate (Feide + MFA, manual)
+uv run koker book                         # book rooms per config.yaml
+uv run koker book --config config.yaml    # explicit config
+uv run koker rooms                        # list available rooms matching config criteria
+uv run koker status                       # list active bookings
 uv run koker cancel --id <booking-id>
 uv run koker cancel --all
 ```
+
+Session saved to `data/storage_state.json`. Re-run `koker login` when session expires (~2 weeks). If running via systemd timer, you'll get an email alert when it expires.
+
+## Systemd timer (daily auto-booking)
+
+```bash
+cp systemd/koker-book.service ~/.config/systemd/user/
+cp systemd/koker-book.timer   ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now koker-book.timer
+```
+
+Uses `config-daily.yaml` (rolling 14-day window). Edit that file separately from `config.yaml`.
 
 ## NTNU booking rules
 
 - Max 4 hours per booking
 - Max 8 bookings in a rolling 2-week window
-- Booking window opens 14 days ahead (near midnight)
+- Booking window opens 14 days ahead
 - Hours: 08:00-23:00

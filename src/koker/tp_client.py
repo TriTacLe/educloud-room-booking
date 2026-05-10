@@ -222,7 +222,7 @@ class TPClient:
             self.page.keyboard.press("Escape")
             logger.warning("Option '%s' not found in combobox", label)
 
-    def search(self, criteria: SearchCriteria) -> list[Room]:
+    def _fetch_possible(self, criteria: SearchCriteria) -> list[Any]:
         self._ensure_on_booking_page()
 
         start_dt = datetime.combine(criteria.date, criteria.start)
@@ -254,14 +254,24 @@ class TPClient:
             rooms_data = []
 
         logger.debug("possible.php returned %d rooms total", len(rooms_data) if rooms_data else 0)
-        return self._parse_api_rooms(rooms_data or [], criteria)
+        return rooms_data or []
 
-    def _parse_api_rooms(self, rooms_data: list[Any], criteria: SearchCriteria) -> list[Room]:
+    def search(self, criteria: SearchCriteria) -> list[Room]:
+        return self._parse_api_rooms(self._fetch_possible(criteria), criteria)
+
+    def search_full(self, criteria: SearchCriteria) -> list[Room]:
+        """Return rooms matching criteria filters that are full/unbookable at this time."""
+        return self._parse_api_rooms(self._fetch_possible(criteria), criteria, unavailable=True)
+
+    def _parse_api_rooms(self, rooms_data: list[Any], criteria: SearchCriteria, unavailable: bool = False) -> list[Room]:
         rooms: list[Room] = []
         area_label_lower = (criteria.area_label or "").lower()
 
         for item in rooms_data:
-            if not item.get("available") or not item.get("can_book"):
+            is_available = bool(item.get("available") and item.get("can_book"))
+            if unavailable and is_available:
+                continue
+            if not unavailable and not is_available:
                 continue
 
             if area_label_lower:
