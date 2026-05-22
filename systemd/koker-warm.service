@@ -1,0 +1,19 @@
+[Unit]
+Description=NTNU room booking - session warmer
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do getent hosts tp.educloud.no >/dev/null 2>&1 && exit 0; sleep 5; done; echo "DNS not ready after 5min" >&2; exit 1'
+WorkingDirectory=%h/srv/ntnu-room-booking
+ExecStart=/usr/bin/docker run --rm \
+    --pull=always \
+    --shm-size=256m \
+    --env-file %h/srv/ntnu-room-booking/.env \
+    -v %h/srv/ntnu-room-booking/data:/app/data \
+    ghcr.io/tritacle/ntnu-room-booking:latest \
+    warm --config config-daily.yaml
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal

@@ -5,6 +5,8 @@ service := "koker-book"
 link:
     ln -sf "$(pwd)/systemd/koker-book-docker.service" ~/.config/systemd/user/koker-book.service
     ln -sf "$(pwd)/systemd/koker-book.timer" ~/.config/systemd/user/koker-book.timer
+    ln -sf "$(pwd)/systemd/koker-warm.service" ~/.config/systemd/user/koker-warm.service
+    ln -sf "$(pwd)/systemd/koker-warm.timer" ~/.config/systemd/user/koker-warm.timer
     ln -sf "$(pwd)/systemd/koker-notify-failure.service" ~/.config/systemd/user/koker-notify-failure.service
     systemctl --user daemon-reload
 
@@ -35,3 +37,11 @@ run:
 # Pull the latest image manually
 pull:
     docker pull {{image}}
+
+# Copy fresh session from laptop to server (run after `koker login` on laptop)
+sync:
+    scp data/storage_state.json server:srv/ntnu-room-booking/data/storage_state.json
+
+# Trigger session warm run now
+warm:
+    systemctl --user start koker-warm.service
