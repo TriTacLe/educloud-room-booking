@@ -94,12 +94,22 @@ def _autofill_credentials(page: Page) -> None:
 
 
 def _try_click(page: Page, *texts: str) -> bool:
-    """Click the first visible element matching any of the given texts."""
+    """Click the first visible interactive element matching any of the given texts."""
     for text in texts:
+        # Try role-based (more reliable than text for buttons/links)
+        for role in ("button", "link"):
+            try:
+                el = page.get_by_role(role, name=text)
+                if el.count() > 0 and el.first.is_visible(timeout=500):
+                    el.first.click()
+                    return True
+            except Exception:
+                pass
+        # Fallback: text match with JS click (avoids stale/parent element issues)
         try:
             el = page.get_by_text(text, exact=False)
-            if el.count() > 0 and el.first.is_visible(timeout=1000):
-                el.first.click()
+            if el.count() > 0:
+                page.evaluate("el => el.click()", el.first.element_handle())
                 return True
         except Exception:
             pass
@@ -167,10 +177,14 @@ def _wait_for_tp_through_feide_chain(
                 pass
             continue
 
-        # Feide/NTNU IdP: fill Feide credentials OR click Microsoft method button
+        # Feide/NTNU IdP: click Microsoft method button (method-selection page),
+        # or fill Feide username/password if those fields are present.
         if "idp.feide.no" in url or "feide.no/simplesaml" in url:
-            _autofill_credentials(page)
-            _try_click(page, "Use work or school account")
+            if _try_click(page, "Use work or school account"):
+                continue
+            # Only try credentials if actual input fields exist (Feide username/password page)
+            if page.locator("input[name=username], input[type=email]").count() > 0:
+                _autofill_credentials(page)
             continue
 
         if "login.microsoftonline.com" not in url:
