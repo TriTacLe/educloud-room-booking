@@ -1,0 +1,12 @@
+.env
+.venv
+data/
+__pycache__/
+*.pyc
+*.pyo
+.git
+.github
+systemd/
+DEV_NOTES.md
+test_mail.py
+*.egg-info

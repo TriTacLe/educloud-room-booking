@@ -1,0 +1,7 @@
+[Unit]
+Description=Rotate koker logs
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/mkdir -p /home/tri/.local/share/koker
+ExecStart=/usr/bin/logrotate --state /home/tri/.local/share/koker/logrotate.status /home/tri/Desktop/personal/ntnu-room-booking/systemd/koker-logrotate.conf

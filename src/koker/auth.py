@@ -84,8 +84,17 @@ def _wait_for_tp_through_feide_chain(page: Page, timeout_ms: int = 90_000) -> bo
     return False
 
 
-def get_authenticated_context(p: Playwright) -> Tuple[Browser, BrowserContext, Page]:
-    browser = p.chromium.launch(headless=False)
+def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Browser, BrowserContext, Page]:
+    browser = p.chromium.launch(
+        headless=headless,
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-extensions",
+            "--js-flags=--max-old-space-size=512",
+        ],
+    )
 
     if STATE_FILE.exists():
         ctx = browser.new_context(storage_state=str(STATE_FILE))

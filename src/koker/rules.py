@@ -50,7 +50,7 @@ def validate_lookahead(booking_date: date, start_hhmm: str | None = None) -> Non
             raise RuleViolation(f"Start time {start_hhmm} today has already passed")
     if delta > 14:
         print(
-            f"Warning: {booking_date} is {delta} days ahead (NTNU window is ~14 days). "
-            "TP may reject the booking.",
+            f"Warning: {booking_date} is {delta} days ahead (NTNU quota says future_days=14). "
+            "Server may reject.",
             file=sys.stderr,
         )

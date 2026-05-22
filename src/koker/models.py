@@ -27,7 +27,8 @@ class MyBooking:
     booking_id: str
     room_name: str
     date_str: str
-    time_str: str
+    time_str: str  # start HH:MM
+    end_str: str = ""  # end HH:MM, empty if unknown
     raw: str = ""
 
 

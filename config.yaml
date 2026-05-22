@@ -11,7 +11,9 @@ _profiles:
     preferred_rooms:
       - "G138"
     preferred_room_types: []
-    excluded_rooms: []
+    excluded_rooms:
+      - "R30"
+      - "E204"
     shuffle_rooms: false
     equipment:
       whiteboard: false
@@ -28,7 +30,9 @@ _profiles:
     preferred_room_types:
       - "Study hall"
       - "Group room"
-    excluded_rooms: []
+    excluded_rooms:
+      - "R30"
+      - "E204"
     shuffle_rooms: false
     equipment:
       whiteboard: false
@@ -42,7 +46,9 @@ _profiles:
     room_type: null
     preferred_rooms: []
     preferred_room_types: []
-    excluded_rooms: []
+    excluded_rooms:
+      - "R30"
+      - "E204"
     shuffle_rooms: false
     equipment:
       whiteboard: true
@@ -56,7 +62,9 @@ _profiles:
     room_type: null
     preferred_rooms: []
     preferred_room_types: []
-    excluded_rooms: []
+    excluded_rooms:
+      - "R30"
+      - "E204"
     shuffle_rooms: false
     equipment:
       whiteboard: false
@@ -71,7 +79,9 @@ _profiles:
     preferred_rooms:
       - "G138"
     preferred_room_types: []
-    excluded_rooms: []
+    excluded_rooms:
+      - "R30"
+      - "E204"
     shuffle_rooms: false
     equipment:
       whiteboard: false
@@ -88,7 +98,9 @@ _profiles:
     preferred_buildings:
       - "Realfagbygget"
       - "Elektro"
-    excluded_rooms: []
+    excluded_rooms:
+      - "R30"
+      - "E204"
     excluded_buildings:
       - "Adolf Øien"
       - "BIM"
@@ -106,7 +118,9 @@ _profiles:
     room_type: null
     preferred_rooms: []
     preferred_room_types: []
-    excluded_rooms: []   # add names to skip, e.g. ["3064", "E204"]
+    excluded_rooms:
+      - "R30"
+      - "E204"
     shuffle_rooms: true
     equipment:
       whiteboard: false
@@ -134,8 +148,7 @@ booking:
   end: "18:00"
   time_step_minutes: 15
 
-  # 20 days so 2 non-overlapping slots/day can reach quota=36 (18 days min)
-  days_ahead: 20
+  days_ahead: 14
 
   # Static dates - uncomment and remove days_ahead to book specific dates instead:
   # dates:
@@ -151,4 +164,16 @@ booking:
 notifications:
   # Credentials from env: GMAIL_TO, GMAIL_APP_PASSWORD, GMAIL_FROM
   # App password: myaccount.google.com -> Security -> App passwords
-  gmail: {}
+  gmail:
+    extra_to:
+      - shaktiomsharma04@gmail.com
+      - classmate@stud.ntnu.no
+
+  # Google Calendar: auto-create events on booking.
+  google_calendar:
+    calendar_id: primary
+    credentials_file: data/gcal_credentials.json
+    token_file: data/gcal_token.json
+    attendees:
+      - shaktiomsharma04@gmail.com
+      - classmate@stud.ntnu.no

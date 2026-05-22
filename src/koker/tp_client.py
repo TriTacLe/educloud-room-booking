@@ -541,10 +541,13 @@ class TPClient:
                         date_str = datetime.strptime(firstday, "%Y-%m-%d").strftime("%d.%m.%Y")
                     except Exception:
                         pass
-            if not time_str:
-                tid = str(item.get("tid") or item.get("preset_start") or "")
-                if tid:
-                    time_str = tid.split("-")[0].strip()[:5]
+            tid = str(item.get("tid") or item.get("preset_start") or "")
+            end_str = ""
+            if tid and "-" in tid:
+                parts = tid.split("-")
+                end_str = parts[1].strip()[:5]
+            if not time_str and tid:
+                time_str = tid.split("-")[0].strip()[:5]
             logger.debug("parsed booking: id=%r room=%r date=%s", booking_id, room_name, date_str)
             if booking_id or room_name:
                 bookings.append(MyBooking(
@@ -552,6 +555,7 @@ class TPClient:
                     room_name=room_name,
                     date_str=date_str,
                     time_str=time_str,
+                    end_str=end_str,
                 ))
         return bookings
 
@@ -689,14 +693,21 @@ class TPClient:
                 continue
             date_str = ""
             time_str = ""
+            end_str = ""
             room_name = ""
             for t in texts:
                 if re.match(r"\d{2}\.\d{2}\.\d{4}", t):
                     date_str = t
-                elif re.match(r"\d{2}:\d{2}", t) and not time_str:
-                    time_str = t
-                elif t and not room_name and len(t) > 1:
-                    room_name = t
+                else:
+                    range_m = re.match(r"(\d{2}:\d{2})-(\d{2}:\d{2})", t)
+                    if range_m:
+                        if not time_str:
+                            time_str = range_m.group(1)
+                        end_str = range_m.group(2)
+                    elif re.match(r"\d{2}:\d{2}", t) and not time_str:
+                        time_str = t
+                    elif t and not room_name and len(t) > 1:
+                        room_name = t
             if not room_name and raw:
                 room_name = raw.split("\n")[0].strip()
             if room_name or booking_id:
@@ -705,6 +716,7 @@ class TPClient:
                     room_name=room_name,
                     date_str=date_str,
                     time_str=time_str,
+                    end_str=end_str,
                     raw=raw,
                 ))
         return bookings

@@ -123,6 +123,7 @@ class GmailConfig(BaseModel):
     to: str = ""
     from_addr: str = ""
     app_password: str = ""
+    extra_to: list[str] = []
 
     def resolve(self) -> tuple[str, str, str]:
         to = self.to or os.getenv("GMAIL_TO", "")
@@ -130,9 +131,32 @@ class GmailConfig(BaseModel):
         app_password = self.app_password or os.getenv("GMAIL_APP_PASSWORD", "")
         return to, from_addr, app_password
 
+    def resolve_all_recipients(self) -> list[str]:
+        primary = self.to or os.getenv("GMAIL_TO", "")
+        recipients = [primary] if primary else []
+        for addr in self.extra_to:
+            if addr not in recipients:
+                recipients.append(addr)
+        return recipients
+
+
+class GoogleCalendarConfig(BaseModel):
+    calendar_id: str = "primary"
+    credentials_file: str = "data/gcal_credentials.json"
+    token_file: str = "data/gcal_token.json"
+    attendees: list[str] = []  # extra invite addresses; GMAIL_TO is always included
+
+    def resolve_attendees(self) -> list[str]:
+        emails = list(self.attendees)
+        gmail_to = os.getenv("GMAIL_TO", "")
+        if gmail_to and gmail_to not in emails:
+            emails.insert(0, gmail_to)
+        return emails
+
 
 class NotificationsConfig(BaseModel):
     gmail: Optional[GmailConfig] = None
+    google_calendar: Optional[GoogleCalendarConfig] = None
 
 
 class Config(BaseModel):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import sys
+import time
 from collections import defaultdict
 from datetime import date as _date
 from datetime import datetime, timedelta
@@ -78,8 +79,8 @@ def _save_debug(page: object, label: str) -> None:
         pass
 
 
-def _open_browser(p: object) -> tuple:
-    browser, ctx, page = get_authenticated_context(p)  # type: ignore[arg-type]
+def _open_browser(p: object, headless: bool = True) -> tuple:
+    browser, ctx, page = get_authenticated_context(p, headless=headless)  # type: ignore[arg-type]
     return browser, ctx, page
 
 
@@ -96,12 +97,41 @@ def _close_browser(browser: object, ctx: object, page: object) -> None:
 
 
 @app.command()
+def gcal_auth(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config.yaml"),
+) -> None:
+    """Authenticate with Google Calendar (one-time setup). Opens browser for OAuth."""
+    _setup_logging(False)
+    try:
+        cfg = load_config(config)
+    except Exception as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    if not cfg.notifications.google_calendar:
+        print("Add 'google_calendar: {}' under 'notifications:' in your config.", file=sys.stderr)
+        raise typer.Exit(1)
+
+    gcal_cfg = cfg.notifications.google_calendar
+    try:
+        from koker.gcal import auth
+        auth(Path(gcal_cfg.credentials_file), Path(gcal_cfg.token_file))
+        print(f"Done. Token saved to {gcal_cfg.token_file}")
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        raise typer.Exit(1)
+    except Exception as e:
+        print(f"Auth failed: {e}", file=sys.stderr)
+        raise typer.Exit(1)
+
+
+@app.command()
 def login() -> None:
     """Open browser and complete Feide/NTNU login. Saves the session."""
     _setup_logging(False)
     with sync_playwright() as p:
         try:
-            browser, ctx, page = _open_browser(p)
+            browser, ctx, page = _open_browser(p, headless=False)
             print("Login successful. Session stored in data/storage_state.json.")
             _close_browser(browser, ctx, page)
         except RuntimeError as e:
@@ -239,6 +269,8 @@ def book(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config.yaml"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     rollback: bool = typer.Option(False, "--rollback", help="Cancel all bookings made in this run on failure"),
+    timeout: Optional[int] = typer.Option(None, "--timeout", "-t", help="Max run time in minutes. Exits cleanly when reached."),
+    stall_timeout: int = typer.Option(20, "--stall-timeout", "-s", help="Exit if no booking succeeds for this many minutes (0 = disabled)."),
 ) -> None:
     """Book rooms from config.yaml. Supports schedule, dates list, or single date."""
     _setup_logging(verbose)
@@ -287,13 +319,41 @@ def book(
             browser, ctx, page = _open_browser(p)
             client = TPClient(page)
 
+            deadline = time.monotonic() + timeout * 60 if timeout else None
+            stall_deadline_s = stall_timeout * 60 if stall_timeout else None
+            last_progress = time.monotonic()
+
             print(f"\nBooking up to {total_bookings} room(s) across {len(slots)} slot(s) at {spec.campus} (round-robin)")
 
             any_success = False
             booking_num = 0
             failed = False
+            quota_hit = False
+            timed_out = False
             booked_per_slot: dict[tuple[_date, str], set[str]] = defaultdict(set)
             booked_times: dict[_date, list[tuple[dtime, dtime]]] = defaultdict(list)
+            all_results: list = []
+
+            if spec.no_overlap:
+                try:
+                    existing = client.get_my_bookings()
+                    for b in existing:
+                        if not b.date_str or not b.time_str:
+                            continue
+                        try:
+                            bdate = datetime.strptime(b.date_str, "%d.%m.%Y").date()
+                            bstart = dtime(*map(int, b.time_str.split(":")))
+                            if b.end_str:
+                                bend = dtime(*map(int, b.end_str.split(":")))
+                            else:
+                                bend = (datetime.combine(_date.today(), bstart) + timedelta(minutes=duration_minutes)).time()
+                            booked_times[bdate].append((bstart, bend))
+                        except Exception:
+                            pass
+                    if existing:
+                        logging.info("Loaded %d existing booking(s) for overlap check", len(existing))
+                except Exception:
+                    pass
 
             # Pre-compute slot metadata; round-robin distributes 1 booking per slot per round
             # so count:100 fills quota evenly across all days instead of front-loading day 1.
@@ -309,10 +369,10 @@ def book(
             max_count = max((s[2] for s in slot_meta), default=0)
 
             for round_num in range(max_count):
-                if failed:
+                if failed or timed_out:
                     break
                 for slot_date, slot_start_time, slot_count, max_search_date in slot_meta:
-                    if failed:
+                    if failed or timed_out:
                         break
                     if round_num >= slot_count:
                         continue
@@ -334,6 +394,14 @@ def book(
                             search_start = slot_start_time
 
                         while search_start <= latest_start and not booking_found:
+                            if deadline is not None and time.monotonic() > deadline:
+                                print(f"Timeout ({timeout}m) reached, stopping.", file=sys.stderr)
+                                timed_out = True
+                                break
+                            if stall_deadline_s is not None and time.monotonic() - last_progress > stall_deadline_s:
+                                print(f"No booking found in {stall_timeout}m, stopping.", file=sys.stderr)
+                                timed_out = True
+                                break
                             if spec.no_overlap and _time_overlaps(search_start, duration_minutes, booked_times[search_date]):
                                 search_start = _advance_time(search_start, spec.time_step_minutes)
                                 continue
@@ -383,6 +451,7 @@ def book(
                             except QuotaExceededError:
                                 print(f"[{booking_num}] Quota exceeded.", file=sys.stderr)
                                 failed = True
+                                quota_hit = True
                                 break
 
                             if result.success:
@@ -395,18 +464,17 @@ def book(
                                 booked_times[search_date].append((search_start, booking_end))
                                 if result.booking_id:
                                     booked_ids.append(result.booking_id)
+                                all_results.append(result)
                                 any_success = True
                                 booking_found = True
-                                if cfg.notifications.gmail:
+                                last_progress = time.monotonic()
+                                if cfg.notifications.google_calendar:
                                     try:
-                                        from koker.notifier import send_gmail
-                                        to, from_addr, app_password = cfg.notifications.gmail.resolve()
-                                        if to and app_password:
-                                            send_gmail(result, to, app_password, from_addr)
-                                        else:
-                                            print(f"[{booking_num}] Warning: Gmail skipped - GMAIL_TO or GMAIL_APP_PASSWORD not set", file=sys.stderr)
-                                    except Exception as notify_err:
-                                        print(f"[{booking_num}] Warning: Gmail notification failed: {notify_err}", file=sys.stderr)
+                                        from koker.gcal import create_event
+                                        gcal_cfg = cfg.notifications.google_calendar
+                                        create_event(result, gcal_cfg.calendar_id, Path(gcal_cfg.credentials_file), Path(gcal_cfg.token_file), gcal_cfg.resolve_attendees())
+                                    except Exception as gcal_err:
+                                        print(f"[{booking_num}] Warning: Google Calendar event failed: {gcal_err}", file=sys.stderr)
                             else:
                                 print(f"[{booking_num}] Warning: {result.message}")
                                 search_start = _advance_time(search_start, spec.time_step_minutes)
@@ -420,8 +488,49 @@ def book(
                         print(f"[{booking_num}] No room found within search window.", file=sys.stderr)
 
             client.flush_xhr_log(DEBUG_DIR)
+            if all_results and cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_summary
+                    _, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    all_recipients = cfg.notifications.gmail.resolve_all_recipients()
+                    if all_recipients and app_password:
+                        send_summary(all_results, all_recipients, app_password, from_addr)
+                    else:
+                        print("Warning: summary email skipped - GMAIL_TO or GMAIL_APP_PASSWORD not set", file=sys.stderr)
+                except Exception as notify_err:
+                    print(f"Warning: summary email failed: {notify_err}", file=sys.stderr)
             if any_success:
                 refresh_session(ctx)
+
+            if quota_hit and cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject=f"koker: quota reached ({booking_num - 1} booked)",
+                            body=f"NTNU booking quota exhausted after {booking_num - 1} booking(s). No further bookings will be made until the quota resets.",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
+
+            if timed_out and not any_success and cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject="koker: no rooms found - stall timeout",
+                            body=f"No room could be booked after {stall_timeout}m of searching. All slots may be full, or the search window is too narrow.",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
 
         except SessionExpiredError:
             if page:
@@ -448,12 +557,40 @@ def book(
             if page:
                 _save_debug(page, "quota-exceeded")
             print("NTNU quota reached.", file=sys.stderr)
+            if cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject="koker: quota reached - no more bookings",
+                            body="NTNU booking quota is full. No further bookings will be made until the quota resets.",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
             raise typer.Exit(1)
 
         except NoRoomsAvailableError as e:
             if page:
                 _save_debug(page, "no-rooms")
             print(f"No rooms available: {e}", file=sys.stderr)
+            if cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject="koker: no rooms available",
+                            body=f"No rooms found for any slot: {e}",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
             raise typer.Exit(1)
 
         except BookingError as e:
@@ -468,6 +605,20 @@ def book(
                     print(f"Rolled back {cancelled} booking(s).")
                 except Exception:
                     pass
+            if cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject="koker: booking error",
+                            body=f"Booking failed with error:\n\n{e}",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
             raise typer.Exit(1)
 
         except Exception as e:
@@ -475,6 +626,20 @@ def book(
                 _save_debug(page, "unexpected-error")
             logging.exception("Unexpected error")
             print(f"Unexpected error: {e}", file=sys.stderr)
+            if cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject="koker: unexpected error",
+                            body=f"koker crashed with an unexpected error:\n\n{type(e).__name__}: {e}\n\nCheck logs for full traceback.",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
             raise typer.Exit(1)
 
         finally:

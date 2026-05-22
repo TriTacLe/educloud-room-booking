@@ -18,6 +18,8 @@ data/storage_state.json
 data/debug/
 data/room_cache.json
 data/jobs.sqlite
+data/gcal_credentials.json
+data/gcal_token.json
 
 # user config
 config-daily.yaml

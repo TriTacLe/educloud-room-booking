@@ -1,0 +1,14 @@
+[Unit]
+Description=Notify on koker-book failure
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/tri/Desktop/personal/ntnu-room-booking
+EnvironmentFile=/home/tri/Desktop/personal/ntnu-room-booking/.env
+ExecStart=/home/tri/Desktop/personal/ntnu-room-booking/.venv/bin/python -c "\
+import os; \
+from koker.notifier import send_alert; \
+to = os.environ.get('GMAIL_TO', ''); \
+pw = os.environ.get('GMAIL_APP_PASSWORD', ''); \
+fr = os.environ.get('GMAIL_FROM', ''); \
+send_alert('koker: daily run failed', 'The koker-book systemd service failed. Check logs:\n\n  journalctl -u koker-book.service -n 50', to, pw, fr) if to and pw else None"

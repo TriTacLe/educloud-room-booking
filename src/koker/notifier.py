@@ -23,30 +23,32 @@ def send_alert(subject: str, body: str, to: str, app_password: str, from_addr: s
     logger.info("Alert sent to %s: %s", to, subject)
 
 
-def send_gmail(result: BookingResult, to: str, app_password: str, from_addr: str = "") -> None:
-    sender = from_addr or to
-    end_minutes = result.start.hour * 60 + result.start.minute + result.duration_minutes
-    end_h, end_m = divmod(end_minutes, 60)
-    time_range = f"{result.start.strftime('%H:%M')}-{end_h:02d}:{end_m:02d}"
+def send_summary(results: list[BookingResult], to: str | list[str], app_password: str, from_addr: str = "") -> None:
+    recipients = [to] if isinstance(to, str) else to
+    if not recipients or not results:
+        return
+    sender = from_addr or recipients[0]
 
-    lines = [
-        f"Room:      {result.room.name}",
-        f"Building:  {result.room.building}" if result.room.building else None,
-        f"Type:      {result.room.room_type}" if result.room.room_type else None,
-        f"Capacity:  {result.room.capacity}",
-        f"Date:      {result.date.strftime('%d.%m.%Y')}",
-        f"Time:      {time_range}",
-        f"Booking ID: {result.booking_id}" if result.booking_id else None,
-    ]
-    body = "\n".join(line for line in lines if line is not None)
+    lines = [f"Booked {len(results)} room(s):", ""]
+    for r in sorted(results, key=lambda x: (x.date, x.start)):
+        end_minutes = r.start.hour * 60 + r.start.minute + r.duration_minutes
+        end_h, end_m = divmod(end_minutes, 60)
+        time_range = f"{r.start.strftime('%H:%M')}-{end_h:02d}:{end_m:02d}"
+        line = f"{r.date.strftime('%d.%m.%Y')}  {time_range}  {r.room.name} (cap {r.room.capacity})"
+        if r.room.building:
+            line += f", {r.room.building}"
+        lines.append(line)
+        if r.booking_id:
+            lines.append(f"  ID: {r.booking_id}")
 
+    body = "\n".join(lines)
     msg = MIMEText(body)
-    msg["Subject"] = f"Booked: {result.room.name} - {result.date.strftime('%d.%m.%Y')} {result.start.strftime('%H:%M')}"
+    msg["Subject"] = f"koker: booked {len(results)} room(s)"
     msg["From"] = sender
-    msg["To"] = to
+    msg["To"] = ", ".join(recipients)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(sender, app_password)
-        smtp.send_message(msg)
+        smtp.sendmail(sender, recipients, msg.as_string())
 
-    logger.info("Gmail notification sent to %s", to)
+    logger.info("Summary email sent to %s: %d booking(s)", ", ".join(recipients), len(results))
