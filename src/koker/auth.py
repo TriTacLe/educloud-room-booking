@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 from typing import Callable, Optional, Tuple
+from urllib.parse import urlparse
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 
@@ -18,22 +19,19 @@ LOGIN_TIMEOUT_MS = 300_000  # 5 minutes for MFA push
 NotifyFn = Callable[[str, bytes], None]
 
 
+def _host(url: str) -> str:
+    return urlparse(url).hostname or ""
+
+
 def _is_login_page(page: Page) -> bool:
-    url = page.url
-    return (
-        "idp.feide.no" in url
-        or "auth.dataporten.no" in url
-        or "login.microsoftonline.com" in url
-    )
+    h = _host(page.url)
+    return h in ("idp.feide.no", "auth.dataporten.no", "login.microsoftonline.com", "login.microsoft.com")
 
 
 def _is_authenticated(page: Page) -> bool:
     url = page.url
-    return (
-        "tp.educloud.no/ntnu" in url
-        and "login" not in url
-        and not _is_login_page(page)
-    )
+    h = _host(url)
+    return h == "tp.educloud.no" and "login" not in url and not _is_login_page(page)
 
 
 def _submit_feide_org_selector(page: Page) -> None:
@@ -94,26 +92,39 @@ def _autofill_credentials(page: Page) -> None:
 
 
 def _try_click(page: Page, *texts: str) -> bool:
-    """Click the first link/button whose text contains any of the given strings."""
+    """Click the first link/button whose text contains any of the given strings.
+
+    Uses Playwright's real mouse simulation (isTrusted=true) so pages that
+    check event.isTrusted won't silently ignore the click."""
     for text in texts:
+        # Try interactive elements first (prefer anchor/button; use force so hidden elements work)
+        for sel in (
+            f"a:has-text('{text}')",
+            f"button:has-text('{text}')",
+            f"[role='button']:has-text('{text}')",
+        ):
+            try:
+                loc = page.locator(sel)
+                n = loc.count()
+                if n > 0:
+                    logger.debug("_try_click: found %d '%s' via %s", n, text, sel)
+                    loc.first.click(timeout=2000, force=True)
+                    logger.debug("_try_click: clicked '%s'", text)
+                    return True
+            except Exception as e:
+                logger.debug("_try_click: %s / '%s' raised: %s", sel, text, e)
+        # Fallback: any element containing the text
         try:
-            # JS: walk all anchors and buttons, click the first text match
-            clicked = page.evaluate(
-                """(needle) => {
-                    for (const el of document.querySelectorAll('a, button, [role="button"]')) {
-                        if (el.textContent.trim().includes(needle)) {
-                            el.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                }""",
-                text,
-            )
-            if clicked:
+            loc = page.get_by_text(text, exact=False)
+            n = loc.count()
+            if n > 0:
+                logger.debug("_try_click: get_by_text found %d '%s'", n, text)
+                loc.first.click(timeout=2000, force=True)
+                logger.debug("_try_click: force-clicked '%s'", text)
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("_try_click: get_by_text '%s' raised: %s", text, e)
+    logger.debug("_try_click: no element found for any of %s", texts)
     return False
 
 
@@ -168,14 +179,15 @@ def _wait_for_tp_through_feide_chain(
             logger.debug("page.url failed - page likely closed")
             return False
 
-        logger.debug("chain poll [%ds] url=%s", elapsed // 1000, url[:80])
+        host = _host(url)
+        logger.debug("chain poll [%ds] host=%s", elapsed // 1000, host)
 
-        if "tp.educloud.no" in url and not _is_login_page(page):
+        if host == "tp.educloud.no" and not _is_login_page(page):
             page.wait_for_timeout(3000)
             return True
 
         # Feide org selector: pick NTNU
-        if "auth.dataporten.no" in url:
+        if host == "auth.dataporten.no":
             try:
                 _submit_feide_org_selector(page)
             except Exception:
@@ -184,23 +196,80 @@ def _wait_for_tp_through_feide_chain(
 
         # Feide/NTNU IdP: click Microsoft method button (method-selection page),
         # or fill Feide username/password if those fields are present.
-        if "idp.feide.no" in url or "feide.no/simplesaml" in url:
-            if _try_click(page, "Use work or school account"):
+        if host == "idp.feide.no":
+            # Method selection: each provider is an <article> or <form>.
+            # The Microsoft link text is "Logg inn med Microsoft" (NO) inside P.hidden
+            # inside a <form>. Submit the right form or click the article.
+            clicked = False
+            for needle in ("Logg inn med Microsoft", "Microsoft", "Use work or school account"):
+                # Try article/li wrapping the method button
+                for outer in (f"article:has-text('{needle}')", f"li:has-text('{needle}')"):
+                    try:
+                        loc = page.locator(outer)
+                        if loc.count() > 0:
+                            logger.debug("Clicking method container '%s' for '%s'", outer, needle)
+                            loc.first.click(force=True, timeout=2000)
+                            clicked = True
+                            break
+                    except Exception as e:
+                        logger.debug("article click '%s' raised: %s", needle, e)
+                if clicked:
+                    break
+                # Fallback: submit the form containing the text
+                try:
+                    result = page.evaluate(f"""() => {{
+                        for (const form of document.querySelectorAll('form')) {{
+                            if (form.textContent.includes('{needle}')) {{
+                                form.submit();
+                                return true;
+                            }}
+                        }}
+                        return false;
+                    }}""")
+                    if result:
+                        logger.debug("Submitted form for '%s'", needle)
+                        clicked = True
+                        break
+                except Exception as e:
+                    logger.debug("form submit '%s' raised: %s", needle, e)
+            if clicked:
                 continue
             # Only try credentials if actual input fields exist (Feide username/password page)
             if page.locator("input[name=username], input[type=email]").count() > 0:
                 _autofill_credentials(page)
             continue
 
-        if "login.microsoftonline.com" not in url:
+        if not (host == "login.microsoftonline.com" or host == "login.microsoft.com"):
             continue
 
-        # Passkey dialog - click Cancel and fall back to password/other method
+        # Passkey dialog - dismiss and fall back to password/other method.
+        # The credentials API is blocked via init script, but if we still land here
+        # press Escape to abort any native browser dialog that slipped through.
         if "fido" in url:
-            _try_click(page, "Cancel", "Sign in another way", "Use a different method")
+            _try_click(page, "Cancel", "Sign in another way", "Use a different method", "Avbryt", "Try another way")
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
             continue
 
-        # "Sign in another way" after passkey failure or on method selection page
+        # Number-matching challenge: must check BEFORE "Sign in another way" because
+        # the number-matching page also has a "Sign in another way" link that would
+        # send us back to method selection and break the loop.
+        mfa_num = _extract_mfa_number(page)
+        if mfa_num:
+            logger.debug("MFA number visible: %s - waiting for phone approval", mfa_num)
+            if not mfa_notified and notify_fn:
+                try:
+                    screenshot = page.screenshot()
+                    notify_fn(mfa_num, screenshot)
+                    mfa_notified = True
+                    print(f"MFA number emailed: {mfa_num}")
+                except Exception as e:
+                    logger.debug("Failed to send MFA notification: %s", e)
+            continue
+
+        # "Sign in another way" on passkey-error or post-autofill pages
         if _try_click(page, "Sign in another way"):
             continue
 
@@ -212,18 +281,6 @@ def _wait_for_tp_through_feide_chain(
         ):
             continue
 
-        # Number-matching challenge: extract number, email it once
-        if not mfa_notified and notify_fn:
-            num = _extract_mfa_number(page)
-            if num:
-                try:
-                    screenshot = page.screenshot()
-                    notify_fn(num, screenshot)
-                    mfa_notified = True
-                    print(f"MFA number emailed: {num}")
-                except Exception as e:
-                    logger.debug("Failed to send MFA notification: %s", e)
-
         # Auto-fill email/password if fields are present
         _autofill_credentials(page)
 
@@ -231,11 +288,24 @@ def _wait_for_tp_through_feide_chain(
     return False
 
 
+def _block_passkeys(ctx: BrowserContext) -> None:
+    """Override credentials API so passkey dialogs are rejected before they appear."""
+    ctx.add_init_script("""
+        Object.defineProperty(navigator, 'credentials', {
+            get: () => ({
+                get: () => Promise.reject(new DOMException('NotAllowedError', 'Passkey blocked by koker')),
+                create: () => Promise.reject(new DOMException('NotAllowedError', 'Passkey blocked by koker')),
+            }),
+            configurable: true,
+        });
+    """)
+
+
 def _try_feide_sso(page: Page) -> bool:
     """Submit NTNU on Feide org-selection page and wait for silent SSO redirect.
 
     Works without MFA when stored Microsoft/NTNU session cookies are still valid."""
-    if "auth.dataporten.no" not in page.url:
+    if _host(page.url) != "auth.dataporten.no":
         return False
     try:
         _submit_feide_org_selector(page)
@@ -277,6 +347,7 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
 
     if STATE_FILE.exists():
         ctx = browser.new_context(storage_state=str(STATE_FILE))
+        _block_passkeys(ctx)
         page = ctx.new_page()
         page.goto(TARGET_URL, wait_until="domcontentloaded")
         page.wait_for_timeout(5000)
@@ -285,7 +356,7 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
             print("Session restored from storage_state.json")
             return browser, ctx, page
 
-        if "auth.dataporten.no" in page.url:
+        if _host(page.url) == "auth.dataporten.no":
             logger.info("SPA redirected to Feide; trying silent SSO re-auth")
             if _try_feide_sso(page):
                 print("Session restored via SSO re-auth")
@@ -298,6 +369,7 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
 
     notify_fn = _make_mfa_notifier()
     ctx = browser.new_context()
+    _block_passkeys(ctx)
     page = ctx.new_page()
     page.goto(TARGET_URL, wait_until="domcontentloaded")
 
