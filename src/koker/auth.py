@@ -94,22 +94,23 @@ def _autofill_credentials(page: Page) -> None:
 
 
 def _try_click(page: Page, *texts: str) -> bool:
-    """Click the first visible interactive element matching any of the given texts."""
+    """Click the first link/button whose text contains any of the given strings."""
     for text in texts:
-        # Try role-based (more reliable than text for buttons/links)
-        for role in ("button", "link"):
-            try:
-                el = page.get_by_role(role, name=text)
-                if el.count() > 0 and el.first.is_visible(timeout=500):
-                    el.first.click()
-                    return True
-            except Exception:
-                pass
-        # Fallback: text match with JS click (avoids stale/parent element issues)
         try:
-            el = page.get_by_text(text, exact=False)
-            if el.count() > 0:
-                page.evaluate("el => el.click()", el.first.element_handle())
+            # JS: walk all anchors and buttons, click the first text match
+            clicked = page.evaluate(
+                """(needle) => {
+                    for (const el of document.querySelectorAll('a, button, [role="button"]')) {
+                        if (el.textContent.trim().includes(needle)) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }""",
+                text,
+            )
+            if clicked:
                 return True
         except Exception:
             pass
@@ -157,13 +158,17 @@ def _wait_for_tp_through_feide_chain(
         try:
             page.wait_for_timeout(step_ms)
         except Exception:
-            return False  # browser or page closed
+            logger.debug("wait_for_timeout interrupted - page likely closed")
+            return False
         elapsed += step_ms
 
         try:
             url = page.url
         except Exception:
+            logger.debug("page.url failed - page likely closed")
             return False
+
+        logger.debug("chain poll [%ds] url=%s", elapsed // 1000, url[:80])
 
         if "tp.educloud.no" in url and not _is_login_page(page):
             page.wait_for_timeout(3000)
