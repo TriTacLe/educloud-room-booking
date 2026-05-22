@@ -21,9 +21,6 @@ data/jobs.sqlite
 data/gcal_credentials.json
 data/gcal_token.json
 
-# user config
-config-daily.yaml
-
 # playwright MCP session artifacts
 .playwright-mcp/
 

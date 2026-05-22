@@ -1,0 +1,57 @@
+# Daily timer config - used by the systemd koker-book service.
+# Profile: cap 6+, Gløshaugen, shuffle for room variety, no time overlap per day.
+
+_profiles:
+
+  default: &default
+    min_capacity: 6
+    building: null
+    room_type: null
+    preferred_rooms: []
+    preferred_room_types: []
+    preferred_buildings:
+      - "Realfagbygget"
+      - "Elektro"
+    excluded_rooms:
+      - "R30"
+      - "E204"
+    excluded_buildings:
+      - "Adolf Øien"
+      - "BIM"
+      - "Byggteknisk"
+    shuffle_rooms: true
+    equipment:
+      whiteboard: false
+      projector: false
+    no_overlap: true
+
+account:
+  feide_user: ""
+
+booking:
+  <<: *default
+
+  campus: Gløshaugen
+  duration: "04:00"
+  description: "Group work"
+  notes: ""
+  count: 100
+  start: "09:00"
+  end: "18:00"
+  time_step_minutes: 15
+  days_ahead: 14  # NTNU server-enforced max
+
+notifications:
+  gmail:
+    extra_to:
+      - shaktiomsharma04@gmail.com
+      - classmate@stud.ntnu.no
+
+  # Google Calendar: auto-create events on booking.
+  google_calendar:
+    calendar_id: primary
+    credentials_file: data/gcal_credentials.json
+    token_file: data/gcal_token.json
+    attendees:
+      - shaktiomsharma04@gmail.com
+      - classmate@stud.ntnu.no
