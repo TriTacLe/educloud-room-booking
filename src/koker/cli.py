@@ -143,43 +143,22 @@ def login() -> None:
 def warm(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c"),
 ) -> None:
-    """Refresh stored session without booking. Run every few days to keep cookies alive."""
+    """Refresh stored session without booking. Re-authenticates headlessly if expired."""
     _setup_logging(False)
-    cfg = None
-    try:
-        cfg = load_config(config)
-    except Exception as e:
-        print(f"Config error: {e}", file=sys.stderr)
-        raise typer.Exit(1)
-
     with sync_playwright() as p:
         browser, ctx, page = None, None, None
         try:
+            # get_authenticated_context handles full re-auth (including MFA email) if expired
             browser, ctx, page = _open_browser(p)
             client = TPClient(page)
             client.get_my_bookings()
             refresh_session(ctx)
             print("Session is live, cookies refreshed.")
         except SessionExpiredError:
-            msg = "Session expired. Run `koker login` on laptop then scp data/storage_state.json to server."
-            print(msg, file=sys.stderr)
-            if cfg and cfg.notifications.gmail:
-                try:
-                    from koker.notifier import send_alert
-                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
-                    if to and app_password:
-                        send_alert(
-                            subject="koker: session expired - action required",
-                            body="NTNU booking session expired.\n\nOn laptop:\n  koker login\n  scp data/storage_state.json server:srv/ntnu-room-booking/data/",
-                            to=to,
-                            app_password=app_password,
-                            from_addr=from_addr,
-                        )
-                except Exception as e:
-                    print(f"Warning: alert email failed: {e}", file=sys.stderr)
+            print("Session still invalid after re-auth attempt.", file=sys.stderr)
             raise typer.Exit(1)
         except RuntimeError as e:
-            print(f"Session check failed: {e}", file=sys.stderr)
+            print(f"Re-auth failed: {e}", file=sys.stderr)
             raise typer.Exit(1)
         finally:
             if browser:

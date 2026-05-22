@@ -2,11 +2,39 @@ from __future__ import annotations
 
 import logging
 import smtplib
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from koker.models import BookingResult
 
 logger = logging.getLogger(__name__)
+
+
+def send_mfa_number(number: str, screenshot: bytes, to: str | list[str], app_password: str, from_addr: str = "") -> None:
+    recipients = [to] if isinstance(to, str) else to
+    sender = from_addr or recipients[0]
+
+    msg = MIMEMultipart()
+    msg["Subject"] = f"koker: approve MFA - tap {number}"
+    msg["From"] = sender
+    msg["To"] = ", ".join(recipients)
+
+    body = MIMEText(
+        f"Open Microsoft Authenticator and tap the number: {number}\n\n"
+        "Screenshot attached - booking runs automatically after approval."
+    )
+    msg.attach(body)
+
+    if screenshot:
+        img = MIMEImage(screenshot, name="mfa.png")
+        msg.attach(img)
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(sender, app_password)
+        smtp.sendmail(sender, recipients, msg.as_string())
+
+    logger.info("MFA number email sent: %s", number)
 
 
 def send_alert(subject: str, body: str, to: str, app_password: str, from_addr: str = "") -> None:
