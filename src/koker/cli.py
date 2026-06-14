@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent.parent / ".env", override=False)
 from playwright.sync_api import sync_playwright
 
-from koker.auth import get_authenticated_context, refresh_session
+from koker.auth import LoginTimeoutError, get_authenticated_context, refresh_session
 from koker.config import load_config
 from koker.models import SearchCriteria
 from koker.rules import (
@@ -134,6 +134,9 @@ def login() -> None:
             browser, ctx, page = _open_browser(p, headless=False)
             print("Login successful. Session stored in data/storage_state.json.")
             _close_browser(browser, ctx, page)
+        except LoginTimeoutError as e:
+            print(f"Login timed out: {e}", file=sys.stderr)
+            raise typer.Exit(1)
         except RuntimeError as e:
             print(f"Login failed: {e}", file=sys.stderr)
             raise typer.Exit(1)
@@ -156,6 +159,9 @@ def warm(
             print("Session is live, cookies refreshed.")
         except SessionExpiredError:
             print("Session still invalid after re-auth attempt.", file=sys.stderr)
+            raise typer.Exit(1)
+        except LoginTimeoutError as e:
+            print(f"MFA timed out: {e}", file=sys.stderr)
             raise typer.Exit(1)
         except RuntimeError as e:
             print(f"Re-auth failed: {e}", file=sys.stderr)
@@ -639,6 +645,29 @@ def book(
                         send_alert(
                             subject="koker: booking error",
                             body=f"Booking failed with error:\n\n{e}",
+                            to=to,
+                            app_password=app_password,
+                            from_addr=from_addr,
+                        )
+                except Exception:
+                    pass
+            raise typer.Exit(1)
+
+        except LoginTimeoutError:
+            print("MFA timed out. No phone approval received within 10 minutes.", file=sys.stderr)
+            if cfg.notifications.gmail:
+                try:
+                    from koker.notifier import send_alert
+                    to, from_addr, app_password = cfg.notifications.gmail.resolve()
+                    if to and app_password:
+                        send_alert(
+                            subject="koker: MFA approval needed",
+                            body=(
+                                "koker could not complete login because no MFA approval arrived within 10 minutes.\n\n"
+                                "The next scheduled run will try again and email you the number to approve.\n\n"
+                                "To trigger a run now, SSH to the server and run:\n"
+                                "  systemctl --user start koker-book.service"
+                            ),
                             to=to,
                             app_password=app_password,
                             from_addr=from_addr,

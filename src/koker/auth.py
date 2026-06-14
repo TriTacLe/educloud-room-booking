@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 
 STATE_FILE = Path("data/storage_state.json")
 TARGET_URL = "https://tp.educloud.no/ntnu/app/rombestilling/"
-LOGIN_TIMEOUT_MS = 300_000  # 5 minutes for MFA push
+LOGIN_TIMEOUT_MS = 600_000  # 10 minutes for MFA push
+
+
+class LoginTimeoutError(RuntimeError):
+    """Raised when MFA approval was not completed within the timeout window."""
 
 # Type for the notify callback: (number_str, screenshot_bytes) -> None
 NotifyFn = Callable[[str, bytes], None]
@@ -379,7 +383,7 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
         print("\nApprove the Microsoft Authenticator push when prompted.\n")
 
     if not _wait_for_tp_through_feide_chain(page, timeout_ms=LOGIN_TIMEOUT_MS, notify_fn=notify_fn):
-        raise RuntimeError(
+        raise LoginTimeoutError(
             "Login timed out. Make sure you approved the Authenticator push."
         )
 
