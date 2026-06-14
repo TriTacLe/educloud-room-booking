@@ -30,7 +30,7 @@ def send_mfa_number(number: str, screenshot: bytes, to: str | list[str], app_pas
         img = MIMEImage(screenshot, name="mfa.png")
         msg.attach(img)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as smtp:
         smtp.login(sender, app_password)
         smtp.sendmail(sender, recipients, msg.as_string())
 

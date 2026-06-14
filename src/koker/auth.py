@@ -276,7 +276,7 @@ def _wait_for_tp_through_feide_chain(
                     mfa_notified = True
                     print(f"MFA number emailed: {mfa_num}")
                 except Exception as e:
-                    logger.debug("Failed to send MFA notification: %s", e)
+                    logger.info("MFA email failed (will retry): %s", e)
             continue
 
         # "Sign in another way" on passkey-error or post-autofill pages
