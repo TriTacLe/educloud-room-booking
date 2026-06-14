@@ -49,7 +49,13 @@ def _submit_feide_org_selector(page: Page) -> None:
 
 
 def _get_feide_password(user: str) -> str:
-    """Read password from system keyring, fall back to FEIDE_PASSWORD env var."""
+    """Read password from file (FEIDE_PASSWORD_FILE), keyring, or FEIDE_PASSWORD env var."""
+    pwd_file = os.environ.get("FEIDE_PASSWORD_FILE", "")
+    if pwd_file:
+        try:
+            return Path(pwd_file).read_text().strip()
+        except Exception:
+            pass
     if user:
         try:
             import subprocess
