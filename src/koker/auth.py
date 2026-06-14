@@ -271,7 +271,12 @@ def _wait_for_tp_through_feide_chain(
             logger.info("MFA number: %s - enter this on your phone", mfa_num)
             if not mfa_notified and notify_fn:
                 try:
-                    notify_fn(mfa_num, b"")
+                    try:
+                        screenshot = page.screenshot(timeout=5000)
+                    except Exception as se:
+                        logger.info("Screenshot failed, sending without: %s", se)
+                        screenshot = b""
+                    notify_fn(mfa_num, screenshot)
                     mfa_notified = True
                     print(f"MFA number emailed: {mfa_num}")
                 except Exception as e:
