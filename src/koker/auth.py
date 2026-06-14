@@ -268,7 +268,7 @@ def _wait_for_tp_through_feide_chain(
         # send us back to method selection and break the loop.
         mfa_num = _extract_mfa_number(page)
         if mfa_num:
-            logger.debug("MFA number visible: %s - waiting for phone approval", mfa_num)
+            logger.info("MFA number: %s - enter this on your phone", mfa_num)
             if not mfa_notified and notify_fn:
                 try:
                     screenshot = page.screenshot()
