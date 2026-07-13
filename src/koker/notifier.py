@@ -44,7 +44,7 @@ def send_alert(subject: str, body: str, to: str, app_password: str, from_addr: s
     msg["From"] = sender
     msg["To"] = to
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as smtp:
         smtp.login(sender, app_password)
         smtp.send_message(msg)
 
@@ -75,7 +75,7 @@ def send_summary(results: list[BookingResult], to: str | list[str], app_password
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as smtp:
         smtp.login(sender, app_password)
         smtp.sendmail(sender, recipients, msg.as_string())
 

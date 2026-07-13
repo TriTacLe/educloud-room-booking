@@ -215,7 +215,7 @@ def _wait_for_tp_through_feide_chain(
     matching. Calls notify_fn(number, screenshot) once when number appears."""
     step_ms = 2_000
     elapsed = 0
-    mfa_notified = False
+    mfa_emailed = ""
 
     while elapsed < timeout_ms:
         try:
@@ -283,7 +283,8 @@ def _wait_for_tp_through_feide_chain(
         mfa_num = _extract_mfa_number(page)
         if mfa_num:
             logger.info("MFA number: %s - enter this on your phone", mfa_num)
-            if not mfa_notified and notify_fn:
+            # Re-send when the number rotates so the mail never carries a stale number.
+            if notify_fn and mfa_emailed != mfa_num:
                 try:
                     try:
                         screenshot = page.screenshot(timeout=5000)
@@ -291,8 +292,8 @@ def _wait_for_tp_through_feide_chain(
                         logger.info("Screenshot failed, sending without: %s", se)
                         screenshot = b""
                     notify_fn(mfa_num, screenshot)
-                    mfa_notified = True
-                    print(f"MFA number emailed: {mfa_num}")
+                    mfa_emailed = mfa_num
+                    logger.info("MFA number emailed: %s", mfa_num)
                 except Exception as e:
                     logger.info("MFA email failed (will retry): %s", e)
             continue
@@ -352,11 +353,10 @@ def _make_mfa_notifier() -> Optional[NotifyFn]:
         return None
 
     def notify(number: str, screenshot: bytes) -> None:
-        try:
-            from koker.notifier import send_mfa_number
-            send_mfa_number(number, screenshot, [to_addr], app_password, from_addr or to_addr)
-        except Exception as e:
-            logger.debug("MFA notify failed: %s", e)
+        # Let errors propagate: the chain logs them at INFO and retries on
+        # the next poll instead of silently marking the number as sent.
+        from koker.notifier import send_mfa_number
+        send_mfa_number(number, screenshot, [to_addr], app_password, from_addr or to_addr)
 
     return notify
 
