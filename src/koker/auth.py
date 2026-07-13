@@ -163,6 +163,48 @@ def _extract_mfa_number(page: Page) -> str:
     return ""
 
 
+def _click_microsoft_method(page: Page) -> bool:
+    """Click the Microsoft login method on a Feide/Dataporten method-select page.
+    The button text varies by locale and host: auth.dataporten.no shows
+    'Bruk arbeids- eller skolekonto', idp.feide.no shows 'Logg inn med Microsoft'."""
+    for needle in (
+        "Bruk arbeids- eller skolekonto",
+        "Logg inn med Microsoft",
+        "Use work or school account",
+        "Microsoft",
+    ):
+        for sel in (
+            f"button:has-text('{needle}')",
+            f"a:has-text('{needle}')",
+            f"article:has-text('{needle}')",
+            f"li:has-text('{needle}')",
+        ):
+            try:
+                loc = page.locator(sel)
+                if loc.count() > 0:
+                    logger.debug("Clicking method '%s' for '%s'", sel, needle)
+                    loc.first.click(force=True, timeout=2000)
+                    return True
+            except Exception as e:
+                logger.debug("method click '%s' raised: %s", sel, e)
+        try:
+            result = page.evaluate(f"""() => {{
+                for (const form of document.querySelectorAll('form')) {{
+                    if (form.textContent.includes('{needle}')) {{
+                        form.submit();
+                        return true;
+                    }}
+                }}
+                return false;
+            }}""")
+            if result:
+                logger.debug("Submitted form for '%s'", needle)
+                return True
+        except Exception as e:
+            logger.debug("form submit '%s' raised: %s", needle, e)
+    return False
+
+
 def _wait_for_tp_through_feide_chain(
     page: Page,
     timeout_ms: int = 90_000,
@@ -193,56 +235,28 @@ def _wait_for_tp_through_feide_chain(
         logger.debug("chain poll [%ds] host=%s", elapsed // 1000, host)
 
         if host == "tp.educloud.no" and not _is_login_page(page):
+            # A fresh context briefly serves the TP SPA shell before its JS
+            # redirects to Feide. Re-check after the settle wait so an
+            # unauthenticated shell is not mistaken for a live session.
             page.wait_for_timeout(3000)
-            return True
+            if _host(page.url) == "tp.educloud.no" and not _is_login_page(page):
+                return True
+            continue
 
-        # Feide org selector: pick NTNU
+        # Feide org selector (old page) or method-select page (new page): pick
+        # NTNU, then the Microsoft method button if present.
         if host == "auth.dataporten.no":
             try:
                 _submit_feide_org_selector(page)
             except Exception:
                 pass
+            _click_microsoft_method(page)
             continue
 
         # Feide/NTNU IdP: click Microsoft method button (method-selection page),
         # or fill Feide username/password if those fields are present.
         if host == "idp.feide.no":
-            # Method selection: each provider is an <article> or <form>.
-            # The Microsoft link text is "Logg inn med Microsoft" (NO) inside P.hidden
-            # inside a <form>. Submit the right form or click the article.
-            clicked = False
-            for needle in ("Logg inn med Microsoft", "Microsoft", "Use work or school account"):
-                # Try article/li wrapping the method button
-                for outer in (f"article:has-text('{needle}')", f"li:has-text('{needle}')"):
-                    try:
-                        loc = page.locator(outer)
-                        if loc.count() > 0:
-                            logger.debug("Clicking method container '%s' for '%s'", outer, needle)
-                            loc.first.click(force=True, timeout=2000)
-                            clicked = True
-                            break
-                    except Exception as e:
-                        logger.debug("article click '%s' raised: %s", needle, e)
-                if clicked:
-                    break
-                # Fallback: submit the form containing the text
-                try:
-                    result = page.evaluate(f"""() => {{
-                        for (const form of document.querySelectorAll('form')) {{
-                            if (form.textContent.includes('{needle}')) {{
-                                form.submit();
-                                return true;
-                            }}
-                        }}
-                        return false;
-                    }}""")
-                    if result:
-                        logger.debug("Submitted form for '%s'", needle)
-                        clicked = True
-                        break
-                except Exception as e:
-                    logger.debug("form submit '%s' raised: %s", needle, e)
-            if clicked:
+            if _click_microsoft_method(page):
                 continue
             # Only try credentials if actual input fields exist (Feide username/password page)
             if page.locator("input[name=username], input[type=email]").count() > 0:
