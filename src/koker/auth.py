@@ -361,6 +361,21 @@ def _make_mfa_notifier() -> Optional[NotifyFn]:
     return notify
 
 
+def _goto_with_retry(page: Page, url: str, attempts: int = 3) -> None:
+    """Navigate with backoff. The first run after the server wakes from
+    suspend often hits a dead network for a few seconds."""
+    for i in range(attempts):
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            return
+        except Exception as e:
+            if i == attempts - 1:
+                raise
+            wait = 10 * (2 ** i)
+            logger.info("goto %s failed (%s), retrying in %ds", url, e, wait)
+            page.wait_for_timeout(wait * 1000)
+
+
 def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Browser, BrowserContext, Page]:
     browser = p.chromium.launch(
         headless=headless,
@@ -377,7 +392,7 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
         ctx = browser.new_context(storage_state=str(STATE_FILE))
         _block_passkeys(ctx)
         page = ctx.new_page()
-        page.goto(TARGET_URL, wait_until="domcontentloaded")
+        _goto_with_retry(page, TARGET_URL)
         page.wait_for_timeout(5000)
 
         if _is_authenticated(page):
@@ -399,7 +414,7 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
     ctx = browser.new_context()
     _block_passkeys(ctx)
     page = ctx.new_page()
-    page.goto(TARGET_URL, wait_until="domcontentloaded")
+    _goto_with_retry(page, TARGET_URL)
 
     if notify_fn:
         print("Re-auth needed. Will email MFA number when ready.")
