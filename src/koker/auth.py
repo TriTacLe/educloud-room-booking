@@ -48,6 +48,20 @@ def _submit_feide_org_selector(page: Page) -> None:
     }""")
 
 
+def _click_account_tile(page: Page) -> bool:
+    """Click the remembered account on the Dataporten account chooser.
+    Appears at auth.dataporten.no/accountchooser when cookies remember a login."""
+    try:
+        loc = page.locator("#accounts a.section-list")
+        if loc.count() > 0:
+            logger.debug("Clicking remembered account tile")
+            loc.first.click(timeout=2000)
+            return True
+    except Exception as e:
+        logger.debug("account tile click raised: %s", e)
+    return False
+
+
 def _get_feide_password(user: str) -> str:
     """Read password from file (FEIDE_PASSWORD_FILE), keyring, or FEIDE_PASSWORD env var."""
     pwd_file = os.environ.get("FEIDE_PASSWORD_FILE", "")
@@ -262,6 +276,8 @@ def _wait_for_tp_through_feide_chain(
         # Feide org selector (old page) or method-select page (new page): pick
         # NTNU, then the Microsoft method button if present.
         if host == "auth.dataporten.no":
+            if _click_account_tile(page):
+                continue
             try:
                 _submit_feide_org_selector(page)
             except Exception:
