@@ -167,6 +167,22 @@ def _click_microsoft_method(page: Page) -> bool:
     """Click the Microsoft login method on a Feide/Dataporten method-select page.
     The button text varies by locale and host: auth.dataporten.no shows
     'Bruk arbeids- eller skolekonto', idp.feide.no shows 'Logg inn med Microsoft'."""
+    # idp.feide.no renders the Microsoft option as <input type="submit">, which
+    # :has-text() cannot match (label lives in the value attribute, not a text
+    # node). Target it directly before falling back to text-based selectors.
+    for sel in (
+        "#microsoft-signin-button",
+        "form[action*='login-azuread'] input[type='submit']",
+    ):
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0:
+                logger.debug("Clicking Microsoft submit '%s'", sel)
+                loc.first.click(force=True, timeout=2000)
+                return True
+        except Exception as e:
+            logger.debug("microsoft submit click '%s' raised: %s", sel, e)
+
     for needle in (
         "Bruk arbeids- eller skolekonto",
         "Logg inn med Microsoft",
@@ -411,7 +427,12 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
         ctx.close()
 
     notify_fn = _make_mfa_notifier()
-    ctx = browser.new_context()
+    # Keep stored cookies for the re-auth pass: ESTSAUTHPERSISTENT lets
+    # Microsoft skip password + MFA even when the TP/Feide session is dead.
+    if STATE_FILE.exists():
+        ctx = browser.new_context(storage_state=str(STATE_FILE))
+    else:
+        ctx = browser.new_context()
     _block_passkeys(ctx)
     page = ctx.new_page()
     _goto_with_retry(page, TARGET_URL)

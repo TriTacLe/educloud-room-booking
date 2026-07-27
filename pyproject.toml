@@ -16,7 +16,12 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["mypy>=2.0.0", "ruff>=0.15.12", "types-pyyaml>=6.0.12.20260508"]
+dev = [
+    "mypy>=2.0.0",
+    "pytest>=9.1.1",
+    "ruff>=0.15.12",
+    "types-pyyaml>=6.0.12.20260508",
+]
 
 [project.scripts]
 koker = "koker.cli:app"
