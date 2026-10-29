@@ -1,0 +1,9 @@
+[Unit]
+Description=Re-enable the NTNU room booking timer
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/ln -sf /home/tri/Desktop/personal/ntnu-room-booking/systemd/koker-book.timer %h/.config/systemd/user/koker-book.timer
+ExecStartPre=/usr/bin/systemctl --user daemon-reload
+ExecStart=/usr/bin/systemctl --user enable --now koker-book.timer
+ExecStartPost=/usr/bin/systemctl --user disable koker-book-reenable.timer
