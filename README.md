@@ -1,4 +1,4 @@
-# ntnu-room-booking
+# educloud-room-booking
 
 Automates room booking on [tp.educloud.no](https://tp.educloud.no/ntnu/app/rombestilling/) using Playwright. MFA is done manually on first run; session is reused after that.
 

@@ -7,9 +7,9 @@ OnFailure=koker-notify-failure.service
 [Service]
 Type=oneshot
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do getent hosts tp.educloud.no >/dev/null 2>&1 && exit 0; sleep 5; done; echo "DNS not ready after 5min" >&2; exit 1'
-WorkingDirectory=/home/tri/Desktop/personal/ntnu-room-booking
-EnvironmentFile=/home/tri/Desktop/personal/ntnu-room-booking/.env
-ExecStart=/home/tri/Desktop/personal/ntnu-room-booking/.venv/bin/koker book --config config-daily.yaml --timeout 30
+WorkingDirectory=/home/tri/Desktop/personal/educloud-room-booking
+EnvironmentFile=/home/tri/Desktop/personal/educloud-room-booking/.env
+ExecStart=/home/tri/Desktop/personal/educloud-room-booking/.venv/bin/koker book --config config-daily.yaml --timeout 30
 TimeoutStartSec=2100
-StandardOutput=append:/home/tri/Desktop/personal/ntnu-room-booking/data/koker-cron.log
-StandardError=append:/home/tri/Desktop/personal/ntnu-room-booking/data/koker-cron.log
+StandardOutput=append:/home/tri/Desktop/personal/educloud-room-booking/data/koker-cron.log
+StandardError=append:/home/tri/Desktop/personal/educloud-room-booking/data/koker-cron.log
