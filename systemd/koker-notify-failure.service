@@ -3,9 +3,9 @@ Description=Notify on koker-book failure
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/tri/Desktop/personal/ntnu-room-booking
-EnvironmentFile=/home/tri/Desktop/personal/ntnu-room-booking/.env
-ExecStart=/home/tri/Desktop/personal/ntnu-room-booking/.venv/bin/python -c "\
+WorkingDirectory=/home/tri/Desktop/personal/educloud-room-booking
+EnvironmentFile=/home/tri/Desktop/personal/educloud-room-booking/.env
+ExecStart=/home/tri/Desktop/personal/educloud-room-booking/.venv/bin/python -c "\
 import os; \
 from koker.notifier import send_alert; \
 to = os.environ.get('GMAIL_TO', ''); \
