@@ -44,7 +44,7 @@ booking:
 notifications:
   gmail:
     # extra_to:
-    #   - shaktiomsharma04@gmail.com
+    #   - classmate@example.com
     #   - classmate@stud.ntnu.no
 
   # Google Calendar: auto-create events on booking.
@@ -53,5 +53,5 @@ notifications:
     credentials_file: data/gcal_credentials.json
     token_file: data/gcal_token.json
     # attendees:
-    #   - shaktiomsharma04@gmail.com
+    #   - classmate@example.com
     #   - classmate@stud.ntnu.no
