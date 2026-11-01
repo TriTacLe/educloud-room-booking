@@ -38,8 +38,9 @@ select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/koker/tp_client.py" = ["E501"]
-"src/koker/cli.py" = ["E501"]
+"src/koker/cli.py" = ["E501", "E402"]
 "src/koker/rules.py" = ["E501"]
+"src/koker/auth.py" = ["E501"]
 
 [tool.mypy]
 strict = true

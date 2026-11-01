@@ -19,6 +19,7 @@ LOGIN_TIMEOUT_MS = 600_000  # 10 minutes for MFA push
 class LoginTimeoutError(RuntimeError):
     """Raised when MFA approval was not completed within the timeout window."""
 
+
 # Type for the notify callback: (number_str, screenshot_bytes) -> None
 NotifyFn = Callable[[str, bytes], None]
 
@@ -29,7 +30,12 @@ def _host(url: str) -> str:
 
 def _is_login_page(page: Page) -> bool:
     h = _host(page.url)
-    return h in ("idp.feide.no", "auth.dataporten.no", "login.microsoftonline.com", "login.microsoft.com")
+    return h in (
+        "idp.feide.no",
+        "auth.dataporten.no",
+        "login.microsoftonline.com",
+        "login.microsoft.com",
+    )
 
 
 def _is_authenticated(page: Page) -> bool:
@@ -73,9 +79,12 @@ def _get_feide_password(user: str) -> str:
     if user:
         try:
             import subprocess
+
             result = subprocess.run(
                 ["secret-tool", "lookup", "service", "koker", "username", user],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
@@ -169,7 +178,7 @@ def _extract_mfa_number(page: Page) -> str:
     try:
         body = page.locator("body").text_content(timeout=2000) or ""
         # Look for 2-digit numbers surrounded by whitespace (the displayed code)
-        matches = re.findall(r'(?<!\d)(\d{2})(?!\d)', body)
+        matches = re.findall(r"(?<!\d)(\d{2})(?!\d)", body)
         if matches:
             return matches[0]
     except Exception:
@@ -302,7 +311,14 @@ def _wait_for_tp_through_feide_chain(
         # The credentials API is blocked via init script, but if we still land here
         # press Escape to abort any native browser dialog that slipped through.
         if "fido" in url:
-            _try_click(page, "Cancel", "Sign in another way", "Use a different method", "Avbryt", "Try another way")
+            _try_click(
+                page,
+                "Cancel",
+                "Sign in another way",
+                "Use a different method",
+                "Avbryt",
+                "Try another way",
+            )
             try:
                 page.keyboard.press("Escape")
             except Exception:
@@ -388,6 +404,7 @@ def _make_mfa_notifier() -> Optional[NotifyFn]:
         # Let errors propagate: the chain logs them at INFO and retries on
         # the next poll instead of silently marking the number as sent.
         from koker.notifier import send_mfa_number
+
         send_mfa_number(number, screenshot, [to_addr], app_password, from_addr or to_addr)
 
     return notify
@@ -403,12 +420,14 @@ def _goto_with_retry(page: Page, url: str, attempts: int = 3) -> None:
         except Exception as e:
             if i == attempts - 1:
                 raise
-            wait = 10 * (2 ** i)
+            wait = 10 * (2**i)
             logger.info("goto %s failed (%s), retrying in %ds", url, e, wait)
             page.wait_for_timeout(wait * 1000)
 
 
-def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Browser, BrowserContext, Page]:
+def get_authenticated_context(
+    p: Playwright, headless: bool = True
+) -> Tuple[Browser, BrowserContext, Page]:
     browser = p.chromium.launch(
         headless=headless,
         args=[
@@ -459,9 +478,7 @@ def get_authenticated_context(p: Playwright, headless: bool = True) -> Tuple[Bro
         print("\nApprove the Microsoft Authenticator push when prompted.\n")
 
     if not _wait_for_tp_through_feide_chain(page, timeout_ms=LOGIN_TIMEOUT_MS, notify_fn=notify_fn):
-        raise LoginTimeoutError(
-            "Login timed out. Make sure you approved the Authenticator push."
-        )
+        raise LoginTimeoutError("Login timed out. Make sure you approved the Authenticator push.")
 
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     ctx.storage_state(path=str(STATE_FILE))

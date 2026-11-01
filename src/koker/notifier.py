@@ -11,7 +11,9 @@ from koker.models import BookingResult
 logger = logging.getLogger(__name__)
 
 
-def send_mfa_number(number: str, screenshot: bytes, to: str | list[str], app_password: str, from_addr: str = "") -> None:
+def send_mfa_number(
+    number: str, screenshot: bytes, to: str | list[str], app_password: str, from_addr: str = ""
+) -> None:
     recipients = [to] if isinstance(to, str) else to
     sender = from_addr or recipients[0]
 
@@ -51,7 +53,9 @@ def send_alert(subject: str, body: str, to: str, app_password: str, from_addr: s
     logger.info("Alert sent to %s: %s", to, subject)
 
 
-def send_summary(results: list[BookingResult], to: str | list[str], app_password: str, from_addr: str = "") -> None:
+def send_summary(
+    results: list[BookingResult], to: str | list[str], app_password: str, from_addr: str = ""
+) -> None:
     recipients = [to] if isinstance(to, str) else to
     if not recipients or not results:
         return

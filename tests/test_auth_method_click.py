@@ -30,9 +30,7 @@ def test_clicks_microsoft_submit_on_feide_page(page):
     page.route(
         "**/*",
         lambda route: (
-            submitted.append(route.request.url)
-            if "login-azuread" in route.request.url
-            else None,
+            submitted.append(route.request.url) if "login-azuread" in route.request.url else None,
             route.abort(),
         ),
     )
