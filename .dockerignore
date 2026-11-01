@@ -8,5 +8,4 @@ __pycache__/
 .github
 systemd/
 DEV_NOTES.md
-test_mail.py
 *.egg-info

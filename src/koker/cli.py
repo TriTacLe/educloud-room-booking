@@ -115,6 +115,7 @@ def gcal_auth(
     gcal_cfg = cfg.notifications.google_calendar
     try:
         from koker.gcal import auth
+
         auth(Path(gcal_cfg.credentials_file), Path(gcal_cfg.token_file))
         print(f"Done. Token saved to {gcal_cfg.token_file}")
     except FileNotFoundError as e:
@@ -192,7 +193,9 @@ def status(
                 print(f"{'#':<4} {'Room':<30} {'Date':<14} {'Time':<10} {'ID'}")
                 print("-" * 70)
                 for i, b in enumerate(bookings, 1):
-                    print(f"{i:<4} {b.room_name:<30} {b.date_str:<14} {b.time_str:<10} {b.booking_id}")
+                    print(
+                        f"{i:<4} {b.room_name:<30} {b.date_str:<14} {b.time_str:<10} {b.booking_id}"
+                    )
 
         except SessionExpiredError:
             if page:
@@ -214,7 +217,9 @@ def status(
 def cancel(
     all: bool = typer.Option(False, "--all", help="Cancel all active bookings"),
     count: Optional[int] = typer.Option(None, "--count", "-n", help="Cancel N bookings"),
-    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config.yaml (for notifications)"),
+    config: Path = typer.Option(
+        Path("config.yaml"), "--config", "-c", help="Path to config.yaml (for notifications)"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Show active bookings. Use --all or --count N to cancel."""
@@ -265,11 +270,14 @@ def cancel(
             if cfg and cfg.notifications.gmail and n > 0:
                 try:
                     from koker.notifier import send_alert
+
                     to_addr, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to_addr and app_password:
                         lines = [f"Cancelled {n} booking(s):", ""]
                         for b in to_cancel:
-                            lines.append(f"  {b.room_name}  {b.date_str}  {b.time_str}  ({b.booking_id})")
+                            lines.append(
+                                f"  {b.room_name}  {b.date_str}  {b.time_str}  ({b.booking_id})"
+                            )
                         send_alert(
                             subject=f"koker: cancelled {n} booking(s)",
                             body="\n".join(lines),
@@ -300,9 +308,18 @@ def cancel(
 def book(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config.yaml"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
-    rollback: bool = typer.Option(False, "--rollback", help="Cancel all bookings made in this run on failure"),
-    timeout: Optional[int] = typer.Option(None, "--timeout", "-t", help="Max run time in minutes. Exits cleanly when reached."),
-    stall_timeout: int = typer.Option(20, "--stall-timeout", "-s", help="Exit if no booking succeeds for this many minutes (0 = disabled)."),
+    rollback: bool = typer.Option(
+        False, "--rollback", help="Cancel all bookings made in this run on failure"
+    ),
+    timeout: Optional[int] = typer.Option(
+        None, "--timeout", "-t", help="Max run time in minutes. Exits cleanly when reached."
+    ),
+    stall_timeout: int = typer.Option(
+        20,
+        "--stall-timeout",
+        "-s",
+        help="Exit if no booking succeeds for this many minutes (0 = disabled).",
+    ),
 ) -> None:
     """Book rooms from config.yaml. Supports schedule, dates list, or single date."""
     _setup_logging(verbose)
@@ -355,7 +372,9 @@ def book(
             stall_deadline_s = stall_timeout * 60 if stall_timeout else None
             last_progress = time.monotonic()
 
-            print(f"\nBooking up to {total_bookings} room(s) across {len(slots)} slot(s) at {spec.campus} (round-robin)")
+            print(
+                f"\nBooking up to {total_bookings} room(s) across {len(slots)} slot(s) at {spec.campus} (round-robin)"
+            )
 
             any_success = False
             booking_num = 0
@@ -378,12 +397,17 @@ def book(
                             if b.end_str:
                                 bend = dtime(*map(int, b.end_str.split(":")))
                             else:
-                                bend = (datetime.combine(_date.today(), bstart) + timedelta(minutes=duration_minutes)).time()
+                                bend = (
+                                    datetime.combine(_date.today(), bstart)
+                                    + timedelta(minutes=duration_minutes)
+                                ).time()
                             booked_times[bdate].append((bstart, bend))
                         except Exception:
                             pass
                     if existing:
-                        logging.info("Loaded %d existing booking(s) for overlap check", len(existing))
+                        logging.info(
+                            "Loaded %d existing booking(s) for overlap check", len(existing)
+                        )
                 except Exception:
                     pass
 
@@ -419,7 +443,11 @@ def book(
                             # exposing rooms that are only free in the afternoon.
                             start_dt = datetime.combine(_date.today(), slot_start_time)
                             end_dt = datetime.combine(_date.today(), latest_start)
-                            total_steps = max(0, int((end_dt - start_dt).total_seconds() / 60) // spec.time_step_minutes)
+                            total_steps = max(
+                                0,
+                                int((end_dt - start_dt).total_seconds() / 60)
+                                // spec.time_step_minutes,
+                            )
                             offset = random.randint(0, total_steps) * spec.time_step_minutes
                             search_start = _advance_time(slot_start_time, offset)
                         else:
@@ -430,11 +458,19 @@ def book(
                                 print(f"Timeout ({timeout}m) reached, stopping.", file=sys.stderr)
                                 timed_out = True
                                 break
-                            if stall_deadline_s is not None and time.monotonic() - last_progress > stall_deadline_s:
-                                print(f"No booking found in {stall_timeout}m, stopping.", file=sys.stderr)
+                            if (
+                                stall_deadline_s is not None
+                                and time.monotonic() - last_progress > stall_deadline_s
+                            ):
+                                print(
+                                    f"No booking found in {stall_timeout}m, stopping.",
+                                    file=sys.stderr,
+                                )
                                 timed_out = True
                                 break
-                            if spec.no_overlap and _time_overlaps(search_start, duration_minutes, booked_times[search_date]):
+                            if spec.no_overlap and _time_overlaps(
+                                search_start, duration_minutes, booked_times[search_date]
+                            ):
                                 search_start = _advance_time(search_start, spec.time_step_minutes)
                                 continue
 
@@ -476,7 +512,9 @@ def book(
                                 continue
 
                             type_tag = f" [{room.room_type}]" if room.room_type else ""
-                            print(f"[{booking_num}] Selected: {room.name}{type_tag} (cap {room.capacity}) on {search_date} at {search_start.strftime('%H:%M')}")
+                            print(
+                                f"[{booking_num}] Selected: {room.name}{type_tag} (cap {room.capacity}) on {search_date} at {search_start.strftime('%H:%M')}"
+                            )
 
                             try:
                                 result = client.confirm(room, criteria)
@@ -487,12 +525,23 @@ def book(
                                 break
 
                             if result.success:
-                                end_mins = result.start.hour * 60 + result.start.minute + result.duration_minutes
+                                end_mins = (
+                                    result.start.hour * 60
+                                    + result.start.minute
+                                    + result.duration_minutes
+                                )
                                 end_h2, end_m2 = divmod(end_mins, 60)
-                                time_range = f"{result.start.strftime('%H:%M')}-{end_h2:02d}:{end_m2:02d}"
-                                print(f"[{booking_num}] Booked: {result.room.name} on {result.date} {time_range}")
+                                time_range = (
+                                    f"{result.start.strftime('%H:%M')}-{end_h2:02d}:{end_m2:02d}"
+                                )
+                                print(
+                                    f"[{booking_num}] Booked: {result.room.name} on {result.date} {time_range}"
+                                )
                                 booked_per_slot[slot_key].add(room.name)
-                                booking_end = (datetime.combine(_date.today(), search_start) + timedelta(minutes=duration_minutes)).time()
+                                booking_end = (
+                                    datetime.combine(_date.today(), search_start)
+                                    + timedelta(minutes=duration_minutes)
+                                ).time()
                                 booked_times[search_date].append((search_start, booking_end))
                                 if result.booking_id:
                                     booked_ids.append(result.booking_id)
@@ -503,10 +552,20 @@ def book(
                                 if cfg.notifications.google_calendar:
                                     try:
                                         from koker.gcal import create_event
+
                                         gcal_cfg = cfg.notifications.google_calendar
-                                        create_event(result, gcal_cfg.calendar_id, Path(gcal_cfg.credentials_file), Path(gcal_cfg.token_file), gcal_cfg.resolve_attendees())
+                                        create_event(
+                                            result,
+                                            gcal_cfg.calendar_id,
+                                            Path(gcal_cfg.credentials_file),
+                                            Path(gcal_cfg.token_file),
+                                            gcal_cfg.resolve_attendees(),
+                                        )
                                     except Exception as gcal_err:
-                                        print(f"[{booking_num}] Warning: Google Calendar event failed: {gcal_err}", file=sys.stderr)
+                                        print(
+                                            f"[{booking_num}] Warning: Google Calendar event failed: {gcal_err}",
+                                            file=sys.stderr,
+                                        )
                             else:
                                 print(f"[{booking_num}] Warning: {result.message}")
                                 search_start = _advance_time(search_start, spec.time_step_minutes)
@@ -514,21 +573,29 @@ def book(
                         if not booking_found and not failed:
                             search_date += timedelta(days=1)
                             if search_date <= max_search_date:
-                                print(f"[{booking_num}] No room on {search_date - timedelta(days=1)}, trying {search_date}...")
+                                print(
+                                    f"[{booking_num}] No room on {search_date - timedelta(days=1)}, trying {search_date}..."
+                                )
 
                     if not booking_found and not failed:
-                        print(f"[{booking_num}] No room found within search window.", file=sys.stderr)
+                        print(
+                            f"[{booking_num}] No room found within search window.", file=sys.stderr
+                        )
 
             client.flush_xhr_log(DEBUG_DIR)
             if all_results and cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_summary
+
                     _, from_addr, app_password = cfg.notifications.gmail.resolve()
                     all_recipients = cfg.notifications.gmail.resolve_all_recipients()
                     if all_recipients and app_password:
                         send_summary(all_results, all_recipients, app_password, from_addr)
                     else:
-                        print("Warning: summary email skipped - GMAIL_TO or GMAIL_APP_PASSWORD not set", file=sys.stderr)
+                        print(
+                            "Warning: summary email skipped - GMAIL_TO or GMAIL_APP_PASSWORD not set",
+                            file=sys.stderr,
+                        )
                 except Exception as notify_err:
                     print(f"Warning: summary email failed: {notify_err}", file=sys.stderr)
             if any_success:
@@ -537,6 +604,7 @@ def book(
             if quota_hit and cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -552,6 +620,7 @@ def book(
             if timed_out and not any_success and cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -572,6 +641,7 @@ def book(
             if cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -592,6 +662,7 @@ def book(
             if cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -612,6 +683,7 @@ def book(
             if cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -640,6 +712,7 @@ def book(
             if cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -658,6 +731,7 @@ def book(
             if cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -684,6 +758,7 @@ def book(
             if cfg.notifications.gmail:
                 try:
                     from koker.notifier import send_alert
+
                     to, from_addr, app_password = cfg.notifications.gmail.resolve()
                     if to and app_password:
                         send_alert(
@@ -714,8 +789,12 @@ def book(
 @app.command()
 def rooms(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config.yaml"),
-    date_str: Optional[str] = typer.Option(None, "--date", "-d", help="Date to search (YYYY-MM-DD). Defaults to tomorrow."),
-    start: Optional[str] = typer.Option(None, "--start", "-s", help="Start time HH:MM. Defaults to config start."),
+    date_str: Optional[str] = typer.Option(
+        None, "--date", "-d", help="Date to search (YYYY-MM-DD). Defaults to tomorrow."
+    ),
+    start: Optional[str] = typer.Option(
+        None, "--start", "-s", help="Start time HH:MM. Defaults to config start."
+    ),
 ) -> None:
     """List available rooms matching the config criteria for a given date."""
     if not config.exists():

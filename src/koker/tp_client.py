@@ -233,7 +233,10 @@ class TPClient:
 
         logger.info(
             "Searching: date=%s start=%s end=%s area=%s",
-            criteria.date.isoformat(), start_iso, end_iso, criteria.area_label,
+            criteria.date.isoformat(),
+            start_iso,
+            end_iso,
+            criteria.area_label,
         )
 
         possible_url = (
@@ -263,7 +266,9 @@ class TPClient:
         """Return rooms matching criteria filters that are full/unbookable at this time."""
         return self._parse_api_rooms(self._fetch_possible(criteria), criteria, unavailable=True)
 
-    def _parse_api_rooms(self, rooms_data: list[Any], criteria: SearchCriteria, unavailable: bool = False) -> list[Room]:
+    def _parse_api_rooms(
+        self, rooms_data: list[Any], criteria: SearchCriteria, unavailable: bool = False
+    ) -> list[Room]:
         rooms: list[Room] = []
         area_label_lower = (criteria.area_label or "").lower()
 
@@ -296,11 +301,7 @@ class TPClient:
                 continue
 
             roomtype_obj = item.get("roomtype") or {}
-            room_type_name = (
-                roomtype_obj.get("name_en")
-                or roomtype_obj.get("name")
-                or ""
-            )
+            room_type_name = roomtype_obj.get("name_en") or roomtype_obj.get("name") or ""
             if criteria.room_type_label:
                 if criteria.room_type_label.lower() not in room_type_name.lower():
                     continue
@@ -312,16 +313,22 @@ class TPClient:
             if room_name and room_id:
                 logger.debug(
                     "Available: id=%s name='%s' building='%s' type='%s' cap=%d area='%s'",
-                    room_id, room_name, building, room_type_name, size,
+                    room_id,
+                    room_name,
+                    building,
+                    room_type_name,
+                    size,
                     item.get("area_name", ""),
                 )
-                rooms.append(Room(
-                    id=room_id,
-                    name=room_name,
-                    capacity=size,
-                    building=building,
-                    room_type=room_type_name,
-                ))
+                rooms.append(
+                    Room(
+                        id=room_id,
+                        name=room_name,
+                        capacity=size,
+                        building=building,
+                        room_type=room_type_name,
+                    )
+                )
 
         # When preferred rooms are set, log their status in the raw API response
         if criteria.preferred_rooms and rooms_data:
@@ -334,26 +341,30 @@ class TPClient:
                         in_area = area_lower in (item.get("area_name") or "").lower()
                         logger.info(
                             "Preferred '%s': found as '%s' (id=%s) area='%s' available=%s can_book=%s cap=%s",
-                            pref, item_name, item_id,
+                            pref,
+                            item_name,
+                            item_id,
                             item.get("area_name", ""),
-                            item.get("available"), item.get("can_book"), item.get("size"),
+                            item.get("available"),
+                            item.get("can_book"),
+                            item.get("size"),
                         )
                         if not in_area:
                             logger.info("  ^ filtered out: not in area '%s'", criteria.area_label)
 
         if not rooms:
-            available_count = sum(
-                1 for r in rooms_data if r.get("available") and r.get("can_book")
-            )
+            available_count = sum(1 for r in rooms_data if r.get("available") and r.get("can_book"))
             glosh_count = sum(
-                1 for r in rooms_data
-                if "gløshaugen" in (r.get("area_name") or "").lower()
+                1 for r in rooms_data if "gløshaugen" in (r.get("area_name") or "").lower()
             )
             logger.warning(
                 "No matching rooms. Total from API: %d, available+bookable: %d, "
                 "in Gløshaugen area: %d, area_filter='%s', min_cap=%d",
-                len(rooms_data), available_count, glosh_count,
-                criteria.area_label, criteria.min_capacity,
+                len(rooms_data),
+                available_count,
+                glosh_count,
+                criteria.area_label,
+                criteria.min_capacity,
             )
 
         return rooms
@@ -364,8 +375,12 @@ class TPClient:
 
         # Filter excluded rooms
         rooms = [
-            r for r in rooms
-            if not any(ex.lower() in r.name.lower() or ex.lower() in r.id.lower() for ex in criteria.excluded_rooms)
+            r
+            for r in rooms
+            if not any(
+                ex.lower() in r.name.lower() or ex.lower() in r.id.lower()
+                for ex in criteria.excluded_rooms
+            )
         ]
         if not rooms:
             logger.debug("All rooms filtered by excluded_rooms=%s", criteria.excluded_rooms)
@@ -380,7 +395,9 @@ class TPClient:
             if criteria.preferred_rooms:
                 logger.info(
                     "Preferred rooms %s not found among %d available: %s",
-                    criteria.preferred_rooms, len(rooms), [r.name for r in rooms[:10]],
+                    criteria.preferred_rooms,
+                    len(rooms),
+                    [r.name for r in rooms[:10]],
                 )
 
         eligible = [r for r in rooms if r.capacity >= criteria.min_capacity]
@@ -389,6 +406,7 @@ class TPClient:
 
         if criteria.shuffle_rooms:
             import random
+
             random.shuffle(eligible)
             return eligible[0]
 
@@ -478,7 +496,8 @@ class TPClient:
             except Exception as e:
                 logger.warning(
                     "Failed to parse reservation response: %s | body: %s",
-                    e, result.get("body", "")[:300],
+                    e,
+                    result.get("body", "")[:300],
                 )
                 message = result.get("body", "")[:300]
         else:
@@ -550,13 +569,15 @@ class TPClient:
                 time_str = tid.split("-")[0].strip()[:5]
             logger.debug("parsed booking: id=%r room=%r date=%s", booking_id, room_name, date_str)
             if booking_id or room_name:
-                bookings.append(MyBooking(
-                    booking_id=booking_id,
-                    room_name=room_name,
-                    date_str=date_str,
-                    time_str=time_str,
-                    end_str=end_str,
-                ))
+                bookings.append(
+                    MyBooking(
+                        booking_id=booking_id,
+                        room_name=room_name,
+                        date_str=date_str,
+                        time_str=time_str,
+                        end_str=end_str,
+                    )
+                )
         return bookings
 
     def cancel_booking_api(self, booking_id: str) -> bool:
@@ -627,6 +648,7 @@ class TPClient:
                 if isinstance(data, list):
                     if data:
                         import json as _json
+
                         logger.debug("bookings.php first item: %s", _json.dumps(data[0])[:2000])
                     captured.extend(data)
             except Exception as exc:
@@ -685,7 +707,7 @@ class TPClient:
         )
 
         bookings: list[MyBooking] = []
-        for item in (data or []):
+        for item in data or []:
             texts = item.get("texts", [])
             raw = item.get("raw", "")
             booking_id = item.get("booking_id", "")
@@ -711,14 +733,16 @@ class TPClient:
             if not room_name and raw:
                 room_name = raw.split("\n")[0].strip()
             if room_name or booking_id:
-                bookings.append(MyBooking(
-                    booking_id=booking_id,
-                    room_name=room_name,
-                    date_str=date_str,
-                    time_str=time_str,
-                    end_str=end_str,
-                    raw=raw,
-                ))
+                bookings.append(
+                    MyBooking(
+                        booking_id=booking_id,
+                        room_name=room_name,
+                        date_str=date_str,
+                        time_str=time_str,
+                        end_str=end_str,
+                        raw=raw,
+                    )
+                )
         return bookings
 
     def cancel_all_bookings(self, limit: int | None = None) -> int:

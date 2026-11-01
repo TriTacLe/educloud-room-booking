@@ -13,7 +13,11 @@ SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
 
 def _copy_to_clipboard(text: str) -> bool:
-    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
+    for cmd in (
+        ["wl-copy"],
+        ["xclip", "-selection", "clipboard"],
+        ["xsel", "--clipboard", "--input"],
+    ):
         try:
             subprocess.run(cmd, input=text.encode(), check=True, capture_output=True)
             return True
@@ -60,7 +64,9 @@ def _get_creds(credentials_path: Path, token_path: Path, interactive: bool = Fal
                         if _captured:
                             url = _captured[0]
                             copied = _copy_to_clipboard(url)
-                            print(f"\nAuth URL{' (copied to clipboard)' if copied else ''}:\n{url}\n")
+                            print(
+                                f"\nAuth URL{' (copied to clipboard)' if copied else ''}:\n{url}\n"
+                            )
                             return
                         threading.Event().wait(0.05)
 
@@ -115,7 +121,7 @@ def create_event(
         f"Capacity: {result.room.capacity}",
         f"Booking ID: {result.booking_id}" if result.booking_id else None,
     ]
-    description = "\n".join(l for l in desc_lines if l)
+    description = "\n".join(line for line in desc_lines if line)
 
     event: dict = {
         "summary": f"{result.room.name} - NTNU",
@@ -133,7 +139,11 @@ def create_event(
         event["attendees"] = [{"email": a} for a in attendees]
 
     send_updates = "all" if attendees else "none"
-    created = service.events().insert(calendarId=calendar_id, body=event, sendUpdates=send_updates).execute()
+    created = (
+        service.events()
+        .insert(calendarId=calendar_id, body=event, sendUpdates=send_updates)
+        .execute()
+    )
     event_id = created.get("id", "")
     logger.info("Calendar event created: %s", created.get("htmlLink", event_id))
     return event_id

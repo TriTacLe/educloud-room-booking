@@ -33,9 +33,7 @@ def validate_time_window(start_hhmm: str, duration: timedelta) -> None:
     if start + duration > latest:
         end_h = int((start + duration).total_seconds() // 3600)
         end_m = int((start + duration).total_seconds() % 3600 // 60)
-        raise RuleViolation(
-            f"Booking ends at {end_h:02d}:{end_m:02d}, past NTNU 23:00 limit"
-        )
+        raise RuleViolation(f"Booking ends at {end_h:02d}:{end_m:02d}, past NTNU 23:00 limit")
 
 
 def validate_lookahead(booking_date: date, start_hhmm: str | None = None) -> None:
@@ -45,7 +43,9 @@ def validate_lookahead(booking_date: date, start_hhmm: str | None = None) -> Non
         raise RuleViolation(f"Date {booking_date} is in the past")
     if delta == 0 and start_hhmm is not None:
         h, m = start_hhmm.split(":")
-        booking_dt = datetime.combine(today, datetime.min.time().replace(hour=int(h), minute=int(m)))
+        booking_dt = datetime.combine(
+            today, datetime.min.time().replace(hour=int(h), minute=int(m))
+        )
         if booking_dt <= datetime.now():
             raise RuleViolation(f"Start time {start_hhmm} today has already passed")
     if delta > 14:
