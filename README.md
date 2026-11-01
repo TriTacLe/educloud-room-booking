@@ -24,12 +24,14 @@ export GMAIL_APP_PASSWORD=xxxx
 
 ```bash
 uv run koker login                        # authenticate (Feide + MFA, manual)
+uv run koker warm                         # refresh the saved session without booking
 uv run koker book                         # book rooms per config.yaml
 uv run koker book --config config.yaml    # explicit config
 uv run koker rooms                        # list available rooms matching config criteria
 uv run koker status                       # list active bookings
-uv run koker cancel --id <booking-id>
+uv run koker cancel --count 2             # cancel N active bookings
 uv run koker cancel --all
+uv run koker gcal-auth                    # one-time Google Calendar OAuth setup
 ```
 
 Session saved to `data/storage_state.json`. Re-run `koker login` when session expires (~2 weeks). If running via systemd timer, you'll get an email alert when it expires.
